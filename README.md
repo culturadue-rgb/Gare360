@@ -1,35 +1,74 @@
-# Stratega Gare
+# Alloro — il verbale, prima del verbale
 
-App in Python (Streamlit) con tre aree:
+Strumento per preparare offerte in gare d'appalto pubbliche (OEPV): simulatore deterministico del punteggio, tracker delle rese per criterio, archivio storico delle gare, assistente AI.
 
-1. **Simulatore deterministico** — configuri la gara (ripartizione tecnico/economico, criteri, formula prezzo, sbarramento, riparametrazione), il tuo ribasso e i profili dei concorrenti. Il punteggio tecnico atteso viene letto dal **tracker** (resa storica per criterio). Output: graduatoria, distacco, ribasso minimo per vincere e punti tecnici mancanti. Stessi input → stesso risultato, sempre.
-2. **Tracker** — `data/tracker.csv`, una riga per criterio (`criterio,tipo,resa,n,note`), **compilato da te**: griglia modificabile nell'app, editor testo, oppure Excel. La resa (0–1) è la frazione dei punti massimi che prendete di solito su quel criterio. L'archivio storico non lo modifica.
-3. **Archivio storico** — le schede gara in `data/storico-gare.md` (stesso formato del template del progetto). Puoi aggiungere schede dal modulo o modificare il file a mano.
-4. **Assistente AI** — chat con prompt di sistema in `prompts/stratega_gare.md` (per ora placeholder, modificabile dall'app). Archivio e tracker vengono passati come contesto.
+```
+alloro/
+├── backend/     FastAPI (Python) — API per simulatore, tracker, archivio, assistente
+├── frontend/    React + Vite — interfaccia
+├── render.yaml  deploy del backend su Render
+└── README.md
+```
 
-## Avvio
+## Sviluppo locale
 
 ```bash
+# backend (porta 8000)
+cd backend
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=...   # solo per l'assistente; in alternativa inseriscila nella sidebar
-streamlit run app.py
+cp .env.example .env            # inserisci ANTHROPIC_API_KEY (serve solo all'assistente)
+export $(grep -v '^#' .env | xargs)
+uvicorn main:app --reload
+
+# frontend (porta 5173, con proxy /api -> localhost:8000)
+cd frontend
+npm install
+npm run dev
 ```
 
-## Struttura
+## Deploy
 
-```
-app.py            interfaccia (tab: Simulatore / Tracker / Archivio / Assistente)
-simulator.py      motore deterministico
-tracker.py        lettura/scrittura di tracker.csv
-archive.py        lettura/scrittura schede markdown
-chatbot.py        chiamata al modello + composizione del contesto
-prompts/          prompt di sistema (placeholder)
-data/             storico-gare.md, tracker.csv
-.streamlit/       tema (verde lime + blu)
-```
+**Backend su Render** — importa il repo come Blueprint: `render.yaml` viene letto in automatico. Nella dashboard imposta:
+- `ANTHROPIC_API_KEY` — la chiave; non va mai nel repo
+- `ALLOWED_ORIGINS` — l'URL del frontend su Vercel, es. `https://alloro.vercel.app`
 
-## Formule prezzo supportate
+Il file monta un Disk da 1 GB su `/var/data` (`DATA_DIR`), così archivio e tracker sopravvivono ai redeploy. Al primo avvio `seed_data.py` copia i file iniziali se il disco è vuoto. Senza disco, i dati tornano allo stato del repo ad ogni deploy.
+
+**Frontend su Vercel** — importa il repo con *Root Directory* = `frontend` (`vercel.json` fa il resto). Variabile d'ambiente:
+- `VITE_API_URL` — l'URL del backend su Render, es. `https://alloro-api.onrender.com`
+
+Le anteprime `*.vercel.app` sono ammesse dal CORS del backend per default (`ALLOW_VERCEL_PREVIEWS=1`); metti `0` per limitarti a `ALLOWED_ORIGINS`.
+
+## API
+
+| Metodo | Percorso | Cosa fa |
+|---|---|---|
+| GET | `/api/health` | stato, se la chiave API è configurata, modello di default |
+| POST | `/api/simula` | `{config, ribasso_nostro, concorrenti}` → graduatoria, sensibilità, dettaglio criteri |
+| GET / PUT | `/api/tracker` | righe del tracker (`criterio, tipo, resa, n, note`) |
+| GET / PUT | `/api/tracker/raw` | il CSV come testo |
+| GET | `/api/archivio` | schede parse + testo markdown |
+| PUT | `/api/archivio/raw` | salva il markdown intero |
+| POST | `/api/archivio/schede` | aggiunge una scheda |
+| GET / PUT | `/api/prompt` | prompt di sistema dell'assistente |
+| POST | `/api/chat` | `{messaggi, includi_contesto, modello}` → risposta |
+
+Documentazione interattiva su `/docs` a backend avviato.
+
+## Variabili d'ambiente
+
+| Dove | Nome | Note |
+|---|---|---|
+| backend | `ANTHROPIC_API_KEY` | obbligatoria solo per l'assistente |
+| backend | `STRATEGA_MODEL` | modello di default (opzionale) |
+| backend | `ALLOWED_ORIGINS` | origini CORS, separate da virgola |
+| backend | `DATA_DIR`, `PROMPTS_DIR` | cartelle dati/prompt (default `./data`, `./prompts`) |
+| frontend | `VITE_API_URL` | URL del backend; vuoto in sviluppo |
+
+Nessuna chiave è scritta nel codice: l'assistente legge `ANTHROPIC_API_KEY` esclusivamente dall'ambiente del server e il frontend non la vede mai.
+
+## Formule prezzo del simulatore
 - **Lineare / proporzionale**: P = Pmax × R / Rmax
-- **Bilineare** (a due rette, coefficiente X 0,80/0,85/0,90): soglia = X × media ribassi; sotto soglia proporzionale, sopra soglia interpolazione fino a Pmax.
+- **Bilineare** (a due rette, X = 0,80 / 0,85 / 0,90): soglia = X × media ribassi; sotto soglia proporzionale, sopra interpolazione fino a Pmax.
 
-Se una gara usa una formula diversa, aggiungila in `simulator.punteggio_economico`.
+Altre formule: aggiungile in `backend/simulator.py`, funzione `punteggio_economico`.
