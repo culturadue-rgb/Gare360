@@ -1,5 +1,5 @@
 {
-  "name": "alloro-frontend",
+  "name": "gare360-frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -15,5 +15,8 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^5.4.0"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }
