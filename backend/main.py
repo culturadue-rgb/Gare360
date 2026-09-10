@@ -25,7 +25,7 @@ import chatbot
 import tracker as trk
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
-app = FastAPI(title="Alloro API", version="1.0.0")
+app = FastAPI(title="Gare360 API", version="1.0.0")
 
 origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
 app.add_middleware(
@@ -252,3 +252,242 @@ def api_chat(body: ChatIn):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Errore nella chiamata al modello: {e}") from e
     return {"risposta": testo}
+
+
+# ===========================================================================
+# GARE IN LAVORAZIONE, DOCUMENTI, SCADENZE  (endpoint aggiuntivi)
+# ===========================================================================
+
+from fastapi import File, Form, UploadFile  # noqa: E402
+
+import gare  # noqa: E402
+
+
+class GaraIn(BaseModel):
+    titolo: str
+    ente: str = ""
+    settore: str = "Altro"
+    scadenza: Optional[str] = None      # ISO "YYYY-MM-DDTHH:MM"
+    note: str = ""
+    base_asta: Optional[float] = None
+
+
+class GaraPatch(BaseModel):
+    titolo: Optional[str] = None
+    ente: Optional[str] = None
+    settore: Optional[str] = None
+    scadenza: Optional[str] = None
+    stato: Optional[str] = None
+    note: Optional[str] = None
+    base_asta: Optional[float] = None
+    dati_simulatore: Optional[dict] = None
+    valutazione: Optional[str] = None
+
+
+class ChatGaraIn(BaseModel):
+    messaggio: str
+    modello: Optional[str] = None
+
+
+class ModelloIn(BaseModel):
+    modello: Optional[str] = None
+
+
+@app.get("/api/gare/costanti")
+def api_gare_costanti():
+    return {"settori": gare.SETTORI, "stati": gare.STATI, "categorie_documento": gare.CATEGORIE_DOC,
+            "memoria_giorni": gare.MEMORIA_GIORNI}
+
+
+@app.get("/api/gare")
+def api_gare_elenco(settore: Optional[str] = None, stato: Optional[str] = None, concluse: Optional[bool] = None):
+    return {"gare": gare.elenco(settore, stato, concluse)}
+
+
+@app.post("/api/gare")
+def api_gare_crea(body: GaraIn):
+    if not body.titolo.strip():
+        raise HTTPException(400, "Il titolo è obbligatorio.")
+    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note, body.base_asta)
+
+
+@app.get("/api/gare/{gid}")
+def api_gara(gid: str):
+    try:
+        return gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+
+@app.patch("/api/gare/{gid}")
+def api_gara_aggiorna(gid: str, body: GaraPatch):
+    try:
+        return gare.aggiorna(gid, body.model_dump(exclude_unset=True))
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+
+@app.delete("/api/gare/{gid}")
+def api_gara_elimina(gid: str):
+    gare.elimina(gid)
+    return {"ok": True}
+
+
+@app.post("/api/gare/{gid}/memoria/riattiva")
+def api_gara_riattiva(gid: str):
+    try:
+        return gare.riattiva_memoria(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+
+# --- Documenti ---------------------------------------------------------------
+
+@app.post("/api/gare/{gid}/documenti")
+async def api_gara_documento(gid: str, file: UploadFile = File(...), categoria: str = Form("altro")):
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        return gare.aggiungi_documento(gid, file.filename or "documento", dati, categoria)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+
+@app.delete("/api/gare/{gid}/documenti/{doc_id}")
+def api_gara_documento_rimuovi(gid: str, doc_id: str):
+    try:
+        return gare.rimuovi_documento(gid, doc_id)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+
+@app.get("/api/gare/{gid}/documenti/{doc_id}/testo")
+def api_gara_documento_testo(gid: str, doc_id: str):
+    return {"testo": gare.testo_documento(gid, doc_id)}
+
+
+@app.get("/api/documenti")
+def api_documenti_tutti():
+    return {"documenti": gare.tutti_i_documenti()}
+
+
+# --- Assistente sulla gara ------------------------------------------------------
+
+def _system_per(g: dict) -> str:
+    return chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), trk.carica())
+
+
+@app.post("/api/gare/{gid}/chat")
+def api_gara_chat(gid: str, body: ChatGaraIn):
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not body.messaggio.strip():
+        raise HTTPException(400, "Messaggio vuoto.")
+    storico = gare.messaggi_per_modello(g)
+    messaggi = storico + [{"role": "user", "content": body.messaggio}]
+    try:
+        risposta = chatbot.chiama(_system_per(g), messaggi, body.modello)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Errore nella chiamata al modello: {e}") from e
+    g = gare.aggiungi_messaggio(g, "user", body.messaggio)
+    g = gare.aggiungi_messaggio(g, "assistant", risposta)
+    return {"risposta": risposta, "gara": g}
+
+
+@app.post("/api/gare/{gid}/valuta")
+def api_gara_valuta(gid: str, body: ModelloIn = ModelloIn()):
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not g["documenti"]:
+        raise HTTPException(400, "Carica almeno un documento prima di chiedere la valutazione.")
+    try:
+        testo = chatbot.chiama(_system_per(g), [{"role": "user", "content": chatbot.ISTRUZIONI_VALUTAZIONE}], body.modello, max_tokens=4000)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Errore nella chiamata al modello: {e}") from e
+    g["valutazione"] = testo
+    if g["stato"] == "Da valutare":
+        g["stato"] = "In analisi"
+    g = gare.aggiungi_messaggio(g, "user", "Valuta la gara secondo la metodologia dell'app.")
+    g = gare.aggiungi_messaggio(g, "assistant", testo)
+    return {"valutazione": testo, "gara": g}
+
+
+@app.post("/api/gare/{gid}/estrai-info")
+def api_gara_estrai_info(gid: str, body: ModelloIn = ModelloIn()):
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not g["documenti"]:
+        raise HTTPException(400, "Carica almeno un documento.")
+    try:
+        info = chatbot.estrai_json(chatbot.ISTRUZIONI_INFO, gare.contesto_gara(g), body.modello)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Estrazione non riuscita: {e}") from e
+    g["info_estratte"] = info
+    # completa i campi vuoti della gara con quanto trovato
+    if not g["ente"] and info.get("ente"):
+        g["ente"] = info["ente"]
+    if not g.get("scadenza") and info.get("scadenza_offerte"):
+        g["scadenza"] = info["scadenza_offerte"]
+    if not g.get("base_asta") and info.get("importo_base_asta"):
+        g["base_asta"] = info["importo_base_asta"]
+    if g["settore"] == "Altro" and info.get("settore") in gare.SETTORI:
+        g["settore"] = info["settore"]
+    gare.tocca(g)
+    return {"info": info, "gara": g}
+
+
+@app.post("/api/gare/{gid}/estrai-simulatore")
+def api_gara_estrai_simulatore(gid: str, body: ModelloIn = ModelloIn()):
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not g["documenti"]:
+        raise HTTPException(400, "Carica almeno un documento (disciplinare o criteri di valutazione).")
+    try:
+        dati = chatbot.estrai_json(chatbot.ISTRUZIONI_SIMULATORE, gare.contesto_gara(g), body.modello)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Estrazione non riuscita: {e}") from e
+    g["dati_simulatore"] = dati
+    gare.tocca(g)
+    return {"dati": dati, "gara": g}
+
+
+# --- Scadenze / calendario -------------------------------------------------------
+
+@app.get("/api/scadenze")
+def api_scadenze(giorni: int = 7, mese: Optional[str] = None):
+    return gare.scadenze(giorni=giorni, mese=mese)
+
+
+@app.post("/api/scadenze/estrai")
+async def api_scadenze_estrai(file: UploadFile = File(...), modello: Optional[str] = Form(None)):
+    """Legge un PDF/DOCX e propone i dati per il calendario. Non salva nulla."""
+    dati = await file.read()
+    testo = gare.estrai_testo(file.filename or "documento", dati)
+    proposta = gare.estrai_scadenza_euristica(testo, file.filename or "")
+    if chatbot.chiave_configurata() and testo.strip():
+        try:
+            ai = chatbot.estrai_json(chatbot.ISTRUZIONI_SCADENZA, testo[:80_000], modello)
+            for k, v in ai.items():
+                if v not in (None, "", []):
+                    proposta[k] = v
+            proposta["fonte"] = "ai"
+        except Exception as e:  # noqa: BLE001
+            proposta["avviso"] = f"Estrazione AI non riuscita, uso quella euristica: {e}"
+    proposta["nome_file"] = file.filename
+    proposta["caratteri_letti"] = len(testo)
+    return proposta
+
+
+@app.post("/api/scadenze/conferma")
+def api_scadenze_conferma(body: GaraIn):
+    """Crea la gara nel calendario con i dati confermati dall'utente."""
+    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note, body.base_asta)
