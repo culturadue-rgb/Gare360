@@ -269,12 +269,10 @@ class FonteExcel(Fonte):
 
     def leggi(self, archivio: str) -> list[dict]:
         wb = self._apri()
-        if archivio not in wb.sheetnames:
-            raise ErroreArchivio(
-                f"Nel file Excel non c'è il foglio «{archivio}». "
-                f"Fogli presenti: {', '.join(wb.sheetnames)}."
-            )
-        ws = wb[archivio]
+        foglio = trova_foglio(wb.sheetnames, archivio)
+        if not foglio:
+            raise _errore_foglio_mancante(archivio, wb.sheetnames)
+        ws = wb[foglio]
         intestazioni = [_testo(c.value) for c in ws[1]]
         _verifica_intestazioni(archivio, intestazioni)
 
@@ -290,10 +288,12 @@ class FonteExcel(Fonte):
     def scrivi(self, archivio: str, righe: list[dict]) -> None:
         import openpyxl
         wb = self._apri()
-        if archivio not in wb.sheetnames:
-            wb.create_sheet(archivio)
-            wb[archivio].append(COLONNE)
-        ws = wb[archivio]
+        foglio = trova_foglio(wb.sheetnames, archivio)
+        if not foglio:
+            foglio = archivio
+            wb.create_sheet(foglio)
+            wb[foglio].append(COLONNE)
+        ws = wb[foglio]
         # Si riscrive solo il corpo: l'intestazione resta quella verificata.
         ws.delete_rows(2, max(ws.max_row - 1, 0))
         for riga in righe:
@@ -343,6 +343,94 @@ class FonteDrive(Fonte):
             self.foglio_id, f"{archivio}!A2:{ultima}{len(righe) + 1}",
             [[riga.get(c, "") for c in COLONNE] for riga in righe],
         )
+
+
+# --------------------------------------------------------------------------- #
+#  Riconoscere i fogli quando il nome non e' esattamente quello atteso         #
+# --------------------------------------------------------------------------- #
+
+# Parole che nel nome di un foglio non distinguono niente: quasi ogni foglio di
+# un archivio gare si chiama "...Gare...". Toglierle lascia solo cio' che conta.
+_RUMORE = {"gare", "gara", "archivio", "archivi", "storico", "storici", "demo",
+           "definitiva", "definitivo", "foglio", "dati", "elenco", "tabella",
+           "copia", "nuovo", "nuova", "aggiornato", "aggiornata"}
+
+
+def _parole(nome: str) -> set[str]:
+    """
+    Le parole significative di un nome, senza accenti, punteggiatura e rumore.
+
+    Si spezza su tutto cio' che non e' lettera o cifra: chiave() normalizza gli
+    accenti e le maiuscole ma lascia stare punti e parentesi, e senza toglierli
+    "Serv." resterebbe una parola diversa da "serv".
+    """
+    return {p for p in re.split(r"[^a-z0-9]+", chiave(nome)) if p and p not in _RUMORE}
+
+
+def _stessa_parola(a: str, b: str) -> bool:
+    """
+    Due parole indicano la stessa cosa? Uguali, oppure una e' l'abbreviazione
+    dell'altra: "serv" sta per "servizi", "cultura" per "culturale".
+
+    Si richiede che la piu' corta sia l'INIZIO della piu' lunga, e lunga almeno
+    quattro lettere. Non basta che comincino uguale: "socio" e "sociale"
+    condividono quattro lettere ma nessuna delle due inizia l'altra, e
+    accomunarle vorrebbe dire scambiare il socio-sanitario per il sociale.
+    """
+    if a == b:
+        return True
+    corta, lunga = (a, b) if len(a) <= len(b) else (b, a)
+    return len(corta) >= 4 and lunga.startswith(corta)
+
+
+def trova_foglio(nomi: list[str], archivio: str) -> Optional[str]:
+    """
+    Quale foglio contiene l'archivio richiesto.
+
+    Prima si cerca il nome esatto. Se non c'e', si accetta un foglio che
+    contenga tutte le parole dell'archivio: "Sociale_Gare" e "Demo_Gare_Cultura"
+    sono evidentemente il Sociale e la Cultura, e rifiutarli obbligherebbe
+    soltanto a rinominare un foglio a mano per far contento il programma.
+
+    Se i candidati sono due ci si ferma: indovinare quale dei due e' quello buono
+    significherebbe leggere l'archivio sbagliato senza dirlo.
+    """
+    for n in nomi:
+        if chiave(n) == chiave(archivio):
+            return n
+    cercate = _parole(archivio)
+    if not cercate:
+        return None
+    candidati = [n for n in nomi
+                 if all(any(_stessa_parola(c, p) for p in _parole(n)) for c in cercate)]
+    if len(candidati) == 1:
+        return candidati[0]
+    if len(candidati) > 1:
+        raise ErroreArchivio(
+            f"Nel file ci sono piu' fogli che sembrano l'archivio «{archivio}»: "
+            f"{', '.join(candidati)}. Rinominane uno, o lascia solo quello giusto: "
+            "scegliere da solo vorrebbe dire leggere forse l'archivio sbagliato."
+        )
+    return None
+
+
+def _errore_foglio_mancante(archivio: str, nomi: list[str]) -> ErroreArchivio:
+    """Detto in modo che si capisca cosa fare, non solo che e' andata male."""
+    riconosciuti = []
+    for a in ARCHIVI:
+        try:
+            trovato = trova_foglio(nomi, a)
+        except ErroreArchivio:
+            trovato = None
+        if trovato:
+            riconosciuti.append(f"{trovato} -> {a}")
+    coda = ("Fogli riconosciuti: " + "; ".join(riconosciuti) + ". "
+            if riconosciuti else "Nessun foglio di questo file e' stato riconosciuto. ")
+    return ErroreArchivio(
+        f"Nel file Excel non c'e' nessun foglio per l'archivio «{archivio}». "
+        f"Fogli presenti: {', '.join(nomi)}. " + coda +
+        "Controlla di aver caricato Archivio_Gare360_unificato.xlsx e non un altro file."
+    )
 
 
 def _verifica_intestazioni(archivio: str, presenti: list[str]) -> None:
