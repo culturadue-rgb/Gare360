@@ -12,7 +12,8 @@ import PonteManuale from "./PonteManuale.jsx";
  * verificare.
  */
 
-export default function CCNL() {
+export default function CCNL({ salute }) {
+  const senzaChiave = !salute?.chiave_api_configurata;
   const [dati, setDati] = useState({ contratti: [], tipi_documento: [], documenti: [] });
   const [contratto, setContratto] = useState("");
   const [meta, setMeta] = useState({ tipo_documento: "testo contrattuale", data_sottoscrizione: "", validita_da: "", validita_a: "" });
@@ -135,7 +136,7 @@ export default function CCNL() {
         <input type="text" placeholder="es. qual è il minimo retributivo del livello 3?"
                value={domanda} onChange={(e) => setDomanda(e.target.value)}
                onKeyDown={(e) => e.key === "Enter" && chiedi()} />
-        <button className="btn primario" disabled={inCorso === "chiedo"} onClick={chiedi}>
+        <button className="btn primario" disabled={inCorso === "chiedo" || senzaChiave} onClick={chiedi}>
           {inCorso === "chiedo" ? "Cerco…" : "Chiedi"}
         </button>
       </div>

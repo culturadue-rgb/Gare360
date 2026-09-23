@@ -81,10 +81,33 @@ def stato_chiave() -> dict:
     if len(k) < 40:
         return {"presente": True, "forma": "sospetta", "ripulita": ripulita,
                 "nota": f"La chiave e' lunga solo {len(k)} caratteri: sembra troncata." + avvertenza}
+    if _rifiutata:
+        return {"presente": True, "forma": "rifiutata", "ripulita": ripulita,
+                "rifiutata": True,
+                "nota": _rifiutata + " Finche' non viene sostituita, le funzioni "
+                        "automatiche non possono funzionare: usa i riquadri "
+                        "«Oppure: ... a mano su claude.ai»." + avvertenza}
     return {"presente": True, "forma": "plausibile", "ripulita": ripulita,
             "nota": "La chiave ha la forma giusta. Se l'AI continua a rifiutarla, "
                     "provala con il pulsante: solo Anthropic sa se e' ancora valida."
                     + avvertenza}
+
+
+# Se Anthropic ha rifiutato la chiave, non serve riprovare a ogni pulsante: si
+# ricorda, cosi' l'app puo' proporre subito la strada manuale invece di far
+# sbattere l'utente contro lo stesso errore. Si azzera al riavvio o appena una
+# chiamata riesce, perche' la chiave puo' essere stata sistemata nel frattempo.
+_rifiutata: str = ""
+
+
+def _segna_rifiuto(motivo: str) -> None:
+    global _rifiutata
+    _rifiutata = motivo
+
+
+def _segna_successo() -> None:
+    global _rifiutata
+    _rifiutata = ""
 
 
 def _in_italiano(e: Exception) -> str:
@@ -96,11 +119,13 @@ def _in_italiano(e: Exception) -> str:
     testo = str(e)
     stato = getattr(e, "status_code", None)
     if stato == 401 or "authentication_error" in testo or "invalid x-api-key" in testo:
+        _segna_rifiuto("La chiave API configurata sul server e' stata rifiutata da Anthropic.")
         return ("La chiave API non e' valida: Anthropic l'ha rifiutata. Va "
                 "ricontrollata su Render (variabile ANTHROPIC_API_KEY) e "
                 "confrontata con quella su console.anthropic.com. Attenzione agli "
                 "spazi e agli a capo incollati per sbaglio.")
     if stato == 403 or "permission_error" in testo:
+        _segna_rifiuto("La chiave API non ha il permesso di usare il modello richiesto.")
         return ("La chiave API e' valida ma non ha il permesso di usare questo "
                 "modello. Controlla il piano su console.anthropic.com.")
     if stato == 429 or "rate_limit" in testo:
@@ -137,12 +162,19 @@ def prova_chiave() -> dict:
                                messages=[{"role": "user", "content": "ciao"}])
     except Exception as e:                      # noqa: BLE001 - si riporta tutto
         return {"ok": False, "messaggio": _in_italiano(e), "modello": MODELLO_DEFAULT}
+    _segna_successo()
     return {"ok": True, "messaggio": f"La chiave funziona. Modello in uso: {MODELLO_DEFAULT}.",
             "modello": MODELLO_DEFAULT}
 
 
 def chiave_configurata() -> bool:
     return bool(_chiave())
+
+
+def chiave_utilizzabile() -> bool:
+    """C'e' una chiave E non risulta gia' rifiutata: solo allora ha senso
+    proporre i pulsanti automatici."""
+    return bool(_chiave()) and not _rifiutata
 
 
 def rispondi(messaggi: list[dict], system: str, modello: str | None = None) -> str:
@@ -192,6 +224,7 @@ def chiama(system: str, messaggi: list[dict], modello: str | None = None,
                                       system=system, messages=messaggi, **extra)
     except Exception as e:                      # noqa: BLE001 - si traduce e si rilancia
         raise ErroreAI(_in_italiano(e)) from e
+    _segna_successo()
     # Con il ragionamento acceso la risposta contiene anche blocchi "thinking":
     # si tiene solo il testo.
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

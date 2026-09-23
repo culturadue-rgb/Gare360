@@ -41,7 +41,10 @@ function Campo({ campo, valore, onChange }) {
   );
 }
 
-export default function SchedaGara({ onCreata }) {
+export default function SchedaGara({ onCreata, salute }) {
+  // Senza chiave valida il pulsante automatico non puo' funzionare: spegnerlo e
+  // dire dove andare vale piu' che lasciarlo premere per vederlo fallire.
+  const senzaChiave = !salute?.chiave_api_configurata;
   const [def, setDef] = useState(null);
   const [titolo, setTitolo] = useState("");
   const [scheda, setScheda] = useState({});
@@ -122,10 +125,14 @@ export default function SchedaGara({ onCreata }) {
       <div className="estrazione">
         <input ref={fileRef} type="file" accept=".pdf,.docx,.doc" style={{ display: "none" }}
                onChange={(e) => estrai(e.target.files?.[0])} />
-        <button className="btn" disabled={estraendo} onClick={() => fileRef.current?.click()}>
+        <button className="btn" disabled={estraendo || senzaChiave} onClick={() => fileRef.current?.click()}>
           {estraendo ? "Leggo il documento…" : "Compila leggendo bando o disciplinare"}
         </button>
-        <span className="nota">oppure compila a mano qui sotto</span>
+        <span className="nota">
+          {senzaChiave
+            ? "il server non ha una chiave API valida: compila a mano qui sotto, o usa il riquadro tratteggiato"
+            : "oppure compila a mano qui sotto"}
+        </span>
       </div>
 
       {/* Senza chiave API il pulsante qui sopra non funziona. Il documento però

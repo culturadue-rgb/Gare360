@@ -90,7 +90,7 @@ export default function App() {
       stati={costanti?.stati} onCambiata={ricarica}
     />
   ) : voce?.archivio === "CCNL" ? (
-    <CCNL />
+    <CCNL salute={salute} />
   ) : voce?.archivio ? (
     <Archivio archivio={voce.archivio} />
   ) : sezione === "impostazioni" ? (
@@ -104,7 +104,7 @@ export default function App() {
   ) : (
     // Senza gara aperta la Home è il posto dove se ne crea una.
     <>
-      <SchedaGara onCreata={(g) => { ricarica(); apriGara(g.id); }} />
+      <SchedaGara onCreata={(g) => { ricarica(); apriGara(g.id); }} salute={salute} />
       <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={6} />
     </>
   );
@@ -168,7 +168,7 @@ export default function App() {
           {(
             <div className="riquadro compatto" id="simulatore">
               <h2>Simulatore<small>{garaCorrente ? `gara: ${garaCorrente.titolo}` : "nessuna gara aperta"}</small></h2>
-              <Simulatore elencoGare={elencoGare} garaId={garaId} onSelezionaGara={setGaraId} />
+              <Simulatore elencoGare={elencoGare} garaId={garaId} onSelezionaGara={setGaraId} salute={salute} />
             </div>
           )}
         </aside>

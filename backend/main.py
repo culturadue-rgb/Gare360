@@ -196,7 +196,7 @@ class ChatIn(BaseModel):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "chiave_api_configurata": chatbot.chiave_configurata(),
+    return {"ok": True, "chiave_api_configurata": chatbot.chiave_utilizzabile(),
             "chiave_api": chatbot.stato_chiave(),
             "modello_default": chatbot.MODELLO_DEFAULT,
             "password_configurata": bool(password_configurata()),

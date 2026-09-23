@@ -30,7 +30,10 @@ const FORMULA_API = {
   "Bilineare con soglia": "bilineare",
 };
 
-export default function Simulatore({ elencoGare = [], garaId, onSelezionaGara }) {
+export default function Simulatore({ elencoGare = [], garaId, onSelezionaGara, salute }) {
+  // Senza chiave valida il pulsante automatico non puo' funzionare: spegnerlo e
+  // dire dove andare vale piu' che lasciarlo premere per vederlo fallire.
+  const senzaChiave = !salute?.chiave_api_configurata;
   const [gara, setGara] = useState(null);
   const [par, setPar] = useState(null);          // parametri modificabili
   const [rivali, setRivali] = useState([]);
@@ -311,10 +314,14 @@ export default function Simulatore({ elencoGare = [], garaId, onSelezionaGara })
           )}
 
           <div className="azioni">
-            <button className="btn primario" disabled={inCorso === "analisi"} onClick={analisiCompleta}>
+            <button className="btn primario" disabled={inCorso === "analisi" || senzaChiave} onClick={analisiCompleta}>
               {inCorso === "analisi" ? "Analizzo…" : "Analisi completa"}
             </button>
-            <span className="nota">l'unica parte affidata all'AI: commenta questi numeri, non li rifà</span>
+            <span className="nota">
+              {senzaChiave
+                ? "il server non ha una chiave API valida: usa il riquadro qui sotto"
+                : "l'unica parte affidata all'AI: commenta questi numeri, non li rifà"}
+            </span>
           </div>
 
           {/* Senza chiave API il pulsante qui sopra non funziona. La stessa
