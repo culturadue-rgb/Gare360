@@ -20,6 +20,8 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import scheda as mod_scheda
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent / "data"))
 GARE_DIR = DATA_DIR / "gare"
 
@@ -93,7 +95,8 @@ def _salva(g: dict) -> dict:
 
 
 def crea(titolo: str, ente: str = "", settore: str = "Altro", scadenza: str | None = None,
-         note: str = "", base_asta: float | None = None) -> dict:
+         note: str = "", base_asta: float | None = None,
+         scheda: dict | None = None, criteri: dict | None = None) -> dict:
     g = {
         "id": uuid.uuid4().hex[:10],
         "titolo": titolo.strip(),
@@ -112,6 +115,10 @@ def crea(titolo: str, ente: str = "", settore: str = "Altro", scadenza: str | No
         "valutazione": None,
         "dati_simulatore": None,
         "info_estratte": None,
+        # La scheda di rilevazione e le modalita' di punteggio: compilate a mano
+        # o proposte dall'AI, sempre correggibili.
+        "scheda": mod_scheda.normalizza_scheda(scheda),
+        "criteri": mod_scheda.normalizza_criteri(criteri),
     }
     return _salva(g)
 
@@ -126,6 +133,17 @@ def aggiorna(gid: str, campi: dict) -> dict:
     for k in ("titolo", "ente", "settore", "scadenza", "stato", "note", "base_asta", "valutazione", "dati_simulatore", "info_estratte"):
         if k in campi and campi[k] is not None or (k in campi and k in ("scadenza", "base_asta")):
             g[k] = campi[k]
+    # Scheda e criteri si FONDONO con quelli gia' salvati: mandare tre campi non
+    # deve cancellare gli altri trentotto. Per svuotare un campo si manda "".
+    if "scheda" in campi:
+        g["scheda"] = {**g.get("scheda", {}), **mod_scheda.normalizza_scheda(campi["scheda"])}
+    if "criteri" in campi:
+        nuovi = mod_scheda.normalizza_criteri(campi["criteri"])
+        # L'elenco dei criteri si sostituisce solo se ne arriva uno: altrimenti
+        # una modifica ai soli pesi lo azzererebbe.
+        if not campi["criteri"].get("elenco"):
+            nuovi["elenco"] = g.get("criteri", {}).get("elenco", [])
+        g["criteri"] = {**g.get("criteri", {}), **nuovi}
     if g["settore"] not in SETTORI:
         g["settore"] = "Altro"
     g["stato"] = converti_stato(g["stato"])
@@ -152,6 +170,8 @@ def _controlla_memoria(g: dict) -> dict:
     """Se sono passati più di MEMORIA_GIORNI dall'ultima attività, archivia la memoria."""
     # Una gara salvata col flusso vecchio viene tradotta qui, alla prima lettura.
     g["stato"] = converti_stato(g.get("stato"))
+    g.setdefault("scheda", mod_scheda.scheda_vuota())
+    g.setdefault("criteri", mod_scheda.criteri_vuoti() | {"elenco": []})
     if g.get("memoria_attiva"):
         ultima = datetime.fromisoformat(g.get("ultima_attivita") or g["creata"])
         if datetime.now() - ultima > timedelta(days=MEMORIA_GIORNI):

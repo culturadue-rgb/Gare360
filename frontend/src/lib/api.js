@@ -117,6 +117,11 @@ Object.assign(api, {
   valutaGara: (id, modello) => call(`/api/gare/${id}/valuta`, { method: "POST", body: json({ modello: modello || null }) }),
   estraiInfo: (id, modello) => call(`/api/gare/${id}/estrai-info`, { method: "POST", body: json({ modello: modello || null }) }),
   estraiSimulatore: (id, modello) => call(`/api/gare/${id}/estrai-simulatore`, { method: "POST", body: json({ modello: modello || null }) }),
+  // --- Scheda di rilevazione ---
+  schedaCampi: () => call("/api/scheda/campi"),
+  estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
+  controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
+
   scadenze: (p = {}) => call("/api/scadenze" + qs(p)),
   estraiScadenza: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scadenze/estrai", f); },
   confermaScadenza: (g) => call("/api/scadenze/conferma", { method: "POST", body: json(g) }),

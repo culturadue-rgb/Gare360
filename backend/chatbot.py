@@ -139,3 +139,53 @@ ISTRUZIONI_SCADENZA = """Dal testo di un documento di gara estrai i dati per il 
 {"titolo": "", "ente": "", "data_scadenza": "<YYYY-MM-DD o null>", "ora_scadenza": "<HH:MM o null>",
  "settore": "Cultura|Sociale|Altro", "base_asta": <numero o null>, "note": "<altre date o info rilevanti in una riga>"}
 La scadenza è il termine per la presentazione delle offerte. Settore Cultura: musei, biblioteche, teatri, archivi, turismo culturale; Sociale: servizi educativi, assistenza, anziani, minori, disabilità, welfare."""
+
+
+# Estrazione della scheda di rilevazione completa dai documenti di gara.
+# I nomi dei campi sono quelli di scheda.py: cambiare li' significa aggiornare
+# anche questo elenco.
+ISTRUZIONI_SCHEDA = """Dai documenti di gara (bando, disciplinare, capitolato) compila la scheda di
+rilevazione dell'appalto. Restituisci SOLO questo JSON, senza commenti:
+
+{
+ "titolo": "nome breve della gara",
+ "scheda": {
+   "data_segnalazione": "", "settore": "Cultura|Sociale|Servizi educativi|Altro",
+   "ente": "", "indirizzo_ente": "", "telefono_ente": "", "sito_ente": "",
+   "servizio": "", "rup": "", "email_rup": "", "telefono_rup": "",
+   "cig": "", "cup": "", "tipo_procedura": "", "criterio_aggiudicazione": "",
+   "lotti": "", "piattaforma": "", "codice_procedura": "",
+   "base_asta": "", "monte_ore": "", "costo_manodopera": "", "oneri_sicurezza": "",
+   "ccnl": "", "durata_mesi": "", "inizio_servizio": "", "rinnovo": "", "proroga": "", "iva": "",
+   "scadenza_offerte": "AAAA-MM-GG", "ora_scadenza_offerte": "HH:MM",
+   "termine_quesiti": "AAAA-MM-GG", "sopralluogo": "Non previsto|Facoltativo|Obbligatorio",
+   "data_sopralluogo": "AAAA-MM-GG", "seduta_pubblica": "AAAA-MM-GG",
+   "requisiti": "", "documentazione_amministrativa": "", "documentazione_tecnica": "",
+   "limiti_relazione": "", "gestore_uscente": "", "siamo_uscenti": "No|Si|Da verificare",
+   "clausola_sociale": "", "note": ""
+ },
+ "criteri": {
+   "peso_tecnico": "", "peso_economico": "", "soglia_sbarramento": "",
+   "riparametrazione": "No|Si|Da verificare",
+   "formula_economica": "Lineare / proporzionale al ribasso|Bilineare con soglia|Altra formula (la descrivo sotto)|Non applicabile",
+   "coefficiente_formula": "", "formula_testo": "", "metodo_attribuzione": "",
+   "elenco": [
+     {"codice": "A", "criterio": "nome del criterio", "sub_criterio": "",
+      "tipo": "qualitativo|tabellare", "punti_max": "", "note": ""}
+   ]
+ }
+}
+
+REGOLE
+- Un campo che non trovi resta stringa vuota. Non dedurre, non stimare, non
+  completare con quello che di solito c'e' nelle gare simili.
+- Gli importi in cifre, senza simbolo di valuta.
+- "formula_testo": trascrivi la formula del punteggio economico COSI' COME E'
+  scritta nel disciplinare, anche se lunga. Se non corrisponde a nessuna di
+  quelle previste scegli "Altra formula" e trascrivila comunque: meglio un
+  calcolo non fatto che un calcolo sbagliato.
+- Se due parti del disciplinare si contraddicono (capita spesso fra la tabella
+  dei criteri e le formule), riporta il valore della tabella dei criteri e
+  scrivi la contraddizione nel campo "note" del criterio interessato.
+- Nell'elenco metti una riga per ogni criterio e, se ci sono, una riga per ogni
+  sub-criterio con il criterio padre ripetuto."""

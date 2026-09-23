@@ -26,6 +26,7 @@ import archive
 import archivio as arch
 import chatbot
 import drive
+import scheda as mod_scheda
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
 # La documentazione automatica (/docs) elenca tutti i comandi dell'API: in
@@ -374,9 +375,13 @@ class GaraIn(BaseModel):
     scadenza: Optional[str] = None      # ISO "YYYY-MM-DDTHH:MM"
     note: str = ""
     base_asta: Optional[float] = None
+    scheda: Optional[dict] = None
+    criteri: Optional[dict] = None
 
 
 class GaraPatch(BaseModel):
+    scheda: Optional[dict] = None
+    criteri: Optional[dict] = None
     titolo: Optional[str] = None
     ente: Optional[str] = None
     settore: Optional[str] = None
@@ -412,7 +417,8 @@ def api_gare_elenco(settore: Optional[str] = None, stato: Optional[str] = None, 
 def api_gare_crea(body: GaraIn):
     if not body.titolo.strip():
         raise HTTPException(400, "Il titolo è obbligatorio.")
-    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note, body.base_asta)
+    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note,
+                     body.base_asta, body.scheda, body.criteri)
 
 
 @app.get("/api/gare/{gid}")
@@ -577,6 +583,57 @@ async def api_archivi_importa(file: UploadFile = File(...)):
     except arch.ErroreArchivio as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True, "gare_per_archivio": conteggi}
+
+
+# --- Scheda di rilevazione -------------------------------------------------
+
+@app.get("/api/scheda/campi")
+def api_scheda_campi():
+    """Definizione del modulo: il frontend lo costruisce da qui, non a mano."""
+    return {"sezioni": mod_scheda.SEZIONI, "campi_criteri": mod_scheda.CAMPI_CRITERI,
+            "colonne_criterio": mod_scheda.COLONNE_CRITERIO,
+            "tipi_criterio": mod_scheda.TIPI_CRITERIO}
+
+
+@app.post("/api/scheda/estrai")
+async def api_scheda_estrai(file: UploadFile = File(...), modello: Optional[str] = Form(None)):
+    """
+    Legge bando o disciplinare e PROPONE i campi della scheda. Non salva nulla:
+    la gara nasce solo quando l'utente conferma, dopo aver corretto.
+    """
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    testo = gare.estrai_testo(file.filename or "documento", dati)
+    if not testo.strip():
+        raise HTTPException(
+            400, "Dal file non si ricava testo: se è una scansione va prima riconosciuta, "
+                 "oppure compila la scheda a mano.")
+    if not chatbot.chiave_configurata():
+        raise HTTPException(
+            503, "L'assistente non è configurato (manca ANTHROPIC_API_KEY): "
+                 "la scheda va compilata a mano.")
+    try:
+        proposta = chatbot.estrai_json(chatbot.ISTRUZIONI_SCHEDA, testo[:120_000], modello)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Estrazione non riuscita: {e}") from e
+
+    criteri = mod_scheda.normalizza_criteri(proposta.get("criteri"))
+    return {
+        "titolo": str(proposta.get("titolo", "")).strip(),
+        "scheda": mod_scheda.normalizza_scheda(proposta.get("scheda")),
+        "criteri": criteri,
+        "avvisi": mod_scheda.controlla(criteri),
+        "nome_file": file.filename,
+        "caratteri_letti": len(testo),
+    }
+
+
+@app.post("/api/criteri/controlla")
+def api_criteri_controlla(criteri: dict = Body(...)):
+    """Avvisi sulle incoerenze dei punteggi. Non blocca: segnala e basta."""
+    norm = mod_scheda.normalizza_criteri(criteri)
+    return {"avvisi": mod_scheda.controlla(norm), "somma_criteri": mod_scheda.somma_criteri(norm)}
 
 
 @app.get("/api/scadenze")

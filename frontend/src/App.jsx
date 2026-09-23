@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, auth } from "./lib/api.js";
 import Accesso from "./components/Accesso.jsx";
+import SchedaGara from "./components/SchedaGara.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
 import Scadenze from "./components/Scadenze.jsx";
@@ -99,10 +100,17 @@ export default function App() {
     <Archivio archivio={voce.archivio} />
   ) : sezione === "impostazioni" ? (
     <Impostazioni salute={salute} modello={modello} setModello={setModello} costanti={costanti} />
-  ) : (
+  ) : garaId ? (
+    // Con una gara aperta la colonna centrale è il suo assistente.
     <>
       {assistente}
-      <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={8} />
+      <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={6} />
+    </>
+  ) : (
+    // Senza gara aperta la Home è il posto dove se ne crea una.
+    <>
+      <SchedaGara onCreata={(g) => { ricarica(); apriGara(g.id); }} />
+      <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={6} />
     </>
   );
 
@@ -145,7 +153,7 @@ export default function App() {
 
       <div className="dashboard">
         <nav className="nav" aria-label="Sezioni">
-          <button className="btn primario nuova" onClick={() => { setSezione("home"); setApriNuova(true); }}>+ Nuova gara</button>
+          <button className="btn primario nuova" onClick={() => { setGaraId(null); setSezione("home"); }}>+ Nuova gara</button>
           {SEZIONI.map((s, i) => s.gruppo
             ? <div key={i} className="gruppo">{s.gruppo}</div>
             : <button key={s.id} className={s.piccolo ? "voce-piccola" : undefined}

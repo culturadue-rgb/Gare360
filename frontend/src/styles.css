@@ -318,3 +318,24 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .stato.lavorazione { background: var(--lime);       color: var(--blu-scuro); }
 .stato.conclusa    { background: var(--blu);        color: var(--bianco); }
 .stato.archiviata  { background: var(--linea);      color: var(--grigio); }
+
+/* --- Scheda di rilevazione ------------------------------------------------ */
+.sezione-scheda {
+  border: 1px solid var(--linea); border-radius: var(--raggio);
+  margin: .7rem 0; background: var(--bianco);
+}
+.sezione-scheda > summary {
+  padding: .6rem .8rem; cursor: pointer; font-weight: 600; color: var(--blu);
+  background: var(--blu-tenue); border-radius: var(--raggio);
+}
+.sezione-scheda[open] > summary { border-radius: var(--raggio) var(--raggio) 0 0; }
+.sezione-scheda > *:not(summary) { padding: 0 .8rem; }
+.sezione-scheda .griglia-campi { padding: .8rem; }
+.sezione-scheda h4 { margin: .8rem .8rem .2rem; color: var(--blu); }
+.sezione-scheda h4 small { font-weight: 400; color: var(--grigio); margin-left: .5rem; }
+.sezione-scheda table input, .sezione-scheda table select {
+  width: 100%; padding: .25rem .35rem; border: 1px solid var(--linea);
+  border-radius: 6px; font: inherit;
+}
+.estrazione { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.avviso.attenzione { border-left: 4px solid var(--lime-scuro); background: var(--lime-tenue); }
