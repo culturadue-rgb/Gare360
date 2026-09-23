@@ -196,9 +196,22 @@ class ChatIn(BaseModel):
 @app.get("/api/health")
 def health():
     return {"ok": True, "chiave_api_configurata": chatbot.chiave_configurata(),
+            "chiave_api": chatbot.stato_chiave(),
             "modello_default": chatbot.MODELLO_DEFAULT,
             "password_configurata": bool(password_configurata()),
             "drive": drive.stato()}
+
+
+@app.post("/api/chiave/prova")
+def api_prova_chiave():
+    """
+    Prova la chiave con una chiamata minima.
+
+    Serve un pulsante apposta: "chiave configurata" dice solo che la casella non
+    e' vuota, e una chiave sbagliata si scopre altrimenti solo quando serve
+    davvero, in mezzo a un'estrazione.
+    """
+    return chatbot.prova_chiave()
 
 
 # ---------------------------------------------------------------------------

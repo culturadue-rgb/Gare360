@@ -76,6 +76,7 @@ const json = (body) => JSON.stringify(body);
 
 export const api = {
   health: () => call("/api/health"),
+  provaChiave: () => call("/api/chiave/prova", { method: "POST" }),
   simula: (payload) => call("/api/simula", { method: "POST", body: json(payload) }),
 
   archivio: () => call("/api/archivio"),

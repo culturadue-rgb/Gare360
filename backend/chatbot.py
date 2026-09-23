@@ -41,15 +41,115 @@ def costruisci_system(archivio_md: str, dati_storici: dict | None = None,
     return system
 
 
+def _chiave() -> str:
+    """
+    La chiave API, ripulita.
+
+    Si tolgono spazi e a capo, e le virgolette: incollando una chiave in un
+    pannello web ci finiscono dentro facilmente, il server la manda cosi' com'e'
+    e Anthropic risponde "invalid x-api-key" senza dire perche'. Un a capo
+    invisibile e' l'errore piu' frequente, e il piu' difficile da vedere.
+    """
+    grezza = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if len(grezza) >= 2 and grezza[0] == grezza[-1] and grezza[0] in "\"'":
+        grezza = grezza[1:-1].strip()
+    return grezza
+
+
+def stato_chiave() -> dict:
+    """
+    Cosa si puo' dire della chiave SENZA chiamare Anthropic (quindi gratis).
+
+    Non dice se la chiave e' valida - quello lo sa solo Anthropic - ma
+    riconosce i casi in cui e' palesemente storta, che sono la maggioranza.
+    """
+    k = _chiave()
+    if not k:
+        return {"presente": False, "forma": "assente",
+                "nota": "Non c'e' nessuna chiave: va impostata la variabile ANTHROPIC_API_KEY."}
+    # Ripulita: nella variabile c'erano spazi, a capo o virgolette di troppo.
+    # Si toglie da soli, ma vale la pena dirlo: e' la causa piu' frequente di
+    # una chiave rifiutata, ed e' invisibile guardando il pannello.
+    ripulita = os.environ.get("ANTHROPIC_API_KEY", "") != k
+    avvertenza = (" Attenzione: nella variabile ANTHROPIC_API_KEY ci sono spazi, "
+                  "a capo o virgolette di troppo. Li tolgo io, ma conviene "
+                  "sistemarla su Render." if ripulita else "")
+    if not k.startswith("sk-ant-"):
+        return {"presente": True, "forma": "sospetta", "ripulita": ripulita,
+                "nota": "La chiave non comincia con «sk-ant-»: probabilmente e' stata "
+                        "incollata male o e' un'altra cosa." + avvertenza}
+    if len(k) < 40:
+        return {"presente": True, "forma": "sospetta", "ripulita": ripulita,
+                "nota": f"La chiave e' lunga solo {len(k)} caratteri: sembra troncata." + avvertenza}
+    return {"presente": True, "forma": "plausibile", "ripulita": ripulita,
+            "nota": "La chiave ha la forma giusta. Se l'AI continua a rifiutarla, "
+                    "provala con il pulsante: solo Anthropic sa se e' ancora valida."
+                    + avvertenza}
+
+
+def _in_italiano(e: Exception) -> str:
+    """
+    Gli errori di Anthropic arrivano come blocchi JSON illeggibili. Qui
+    diventano frasi che dicono cosa fare, perche' "Error code: 401 -
+    {'type': 'authentication_error'...}" non aiuta chi deve risolverlo.
+    """
+    testo = str(e)
+    stato = getattr(e, "status_code", None)
+    if stato == 401 or "authentication_error" in testo or "invalid x-api-key" in testo:
+        return ("La chiave API non e' valida: Anthropic l'ha rifiutata. Va "
+                "ricontrollata su Render (variabile ANTHROPIC_API_KEY) e "
+                "confrontata con quella su console.anthropic.com. Attenzione agli "
+                "spazi e agli a capo incollati per sbaglio.")
+    if stato == 403 or "permission_error" in testo:
+        return ("La chiave API e' valida ma non ha il permesso di usare questo "
+                "modello. Controlla il piano su console.anthropic.com.")
+    if stato == 429 or "rate_limit" in testo:
+        return ("Troppe richieste in poco tempo, oppure il credito e' esaurito. "
+                "Aspetta un minuto e riprova; se insiste, controlla il credito su "
+                "console.anthropic.com.")
+    if stato in (500, 502, 503, 529) or "overloaded" in testo:
+        return "Il servizio AI e' momentaneamente sovraccarico. Riprova fra un minuto."
+    if stato == 404 or "not_found" in testo:
+        return (f"Il modello richiesto non esiste o non e' disponibile per questa "
+                f"chiave. Modello in uso: {MODELLO_DEFAULT}.")
+    return f"L'AI non ha risposto: {testo}"
+
+
+class ErroreAI(RuntimeError):
+    """Errore gia' tradotto in italiano, pronto da mostrare."""
+
+
+def prova_chiave() -> dict:
+    """
+    Verifica la chiave con la chiamata piu' piccola possibile.
+
+    Costa una manciata di token: serve a distinguere "chiave sbagliata" da
+    "modello non disponibile" da "credito finito", che dall'esterno si
+    assomigliano tutti.
+    """
+    if not _chiave():
+        return {"ok": False, "messaggio": "Nessuna chiave configurata sul server "
+                                          "(variabile ANTHROPIC_API_KEY su Render)."}
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=_chiave())
+        client.messages.create(model=MODELLO_DEFAULT, max_tokens=1,
+                               messages=[{"role": "user", "content": "ciao"}])
+    except Exception as e:                      # noqa: BLE001 - si riporta tutto
+        return {"ok": False, "messaggio": _in_italiano(e), "modello": MODELLO_DEFAULT}
+    return {"ok": True, "messaggio": f"La chiave funziona. Modello in uso: {MODELLO_DEFAULT}.",
+            "modello": MODELLO_DEFAULT}
+
+
 def chiave_configurata() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return bool(_chiave())
 
 
 def rispondi(messaggi: list[dict], system: str, modello: str | None = None) -> str:
     """messaggi: lista di {"role": "user"|"assistant", "content": str}."""
     import anthropic
 
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = _chiave()
     if not key:
         return ("Nessuna chiave API configurata sul server: imposta la variabile "
                 "d'ambiente ANTHROPIC_API_KEY.")
@@ -82,13 +182,16 @@ def chiama(system: str, messaggi: list[dict], modello: str | None = None,
     """
     import anthropic
 
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = _chiave()
     if not key:
-        raise RuntimeError("Nessuna chiave API configurata sul server (ANTHROPIC_API_KEY).")
+        raise ErroreAI("Nessuna chiave API configurata sul server (ANTHROPIC_API_KEY).")
     client = anthropic.Anthropic(api_key=key)
     extra = {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}} if ragiona else {}
-    resp = client.messages.create(model=modello or MODELLO_DEFAULT, max_tokens=max_tokens,
-                                  system=system, messages=messaggi, **extra)
+    try:
+        resp = client.messages.create(model=modello or MODELLO_DEFAULT, max_tokens=max_tokens,
+                                      system=system, messages=messaggi, **extra)
+    except Exception as e:                      # noqa: BLE001 - si traduce e si rilancia
+        raise ErroreAI(_in_italiano(e)) from e
     # Con il ragionamento acceso la risposta contiene anche blocchi "thinking":
     # si tiene solo il testo.
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")

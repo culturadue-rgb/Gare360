@@ -6,6 +6,8 @@ export default function Impostazioni({ salute, modello, setModello, costanti }) 
   const [msg, setMsg] = useState(null);
   const [errore, setErrore] = useState(null);
   const [statoArchivi, setStatoArchivi] = useState(null);
+  const [provando, setProvando] = useState(false);
+  const [esitoChiave, setEsitoChiave] = useState(null);
   const [caricando, setCaricando] = useState(false);
   const fileRef = useRef(null);
 
@@ -44,6 +46,18 @@ export default function Impostazioni({ salute, modello, setModello, costanti }) 
     ? Object.values(gare).reduce((s, n) => s + (typeof n === "number" ? n : 0), 0)
     : 0;
 
+  async function provaChiave() {
+    setProvando(true);
+    setEsitoChiave(null);
+    try {
+      setEsitoChiave(await api.provaChiave());
+    } catch (e) {
+      setEsitoChiave({ ok: false, messaggio: "Non sono riuscito a contattare il backend: " + e.message });
+    } finally {
+      setProvando(false);
+    }
+  }
+
   return (
     <div className="riquadro">
       <h2>Impostazioni</h2>
@@ -52,6 +66,25 @@ export default function Impostazioni({ salute, modello, setModello, costanti }) 
         <b>{salute?.chiave_api_configurata ? "pronto" : "senza chiave (imposta ANTHROPIC_API_KEY sul server)"}</b>
         {" "}· memoria delle gare: {costanti?.memoria_giorni || 15} giorni dall'ultima attività.
       </p>
+
+      {/* ---------------- Chiave dell'AI ----------------
+          "Configurata" vuol dire solo che la casella non è vuota. Se la chiave è
+          sbagliata lo si scopre altrimenti a metà di un'estrazione, con un errore
+          incomprensibile: meglio poterla provare quando si vuole. */}
+      <h3>Chiave dell'assistente AI</h3>
+      {salute?.chiave_api?.nota && (
+        <p className="nota">{salute.chiave_api.nota}</p>
+      )}
+      <p>
+        <button className="btn contorno" onClick={provaChiave} disabled={provando}>
+          {provando ? "Provo…" : "Prova la chiave"}
+        </button>
+        {" "}
+        <span className="nota">Fa una richiesta minima ad Anthropic: costa pochissimo.</span>
+      </p>
+      {esitoChiave && (
+        <p className={esitoChiave.ok ? "avviso" : "avviso errore"}>{esitoChiave.messaggio}</p>
+      )}
 
       {/* ---------------- Archivio storico ---------------- */}
       <h3>Archivio storico</h3>
