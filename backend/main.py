@@ -1,11 +1,11 @@
 """
-Backend FastAPI — espone come API le funzioni di simulator, tracker, archive, chatbot.
+Backend FastAPI — espone come API le funzioni di simulator, archivio, archive, chatbot.
 
 Variabili d'ambiente:
   ANTHROPIC_API_KEY  chiave per l'assistente (obbligatoria solo per /api/chat)
   STRATEGA_MODEL     modello di default (opzionale)
   ALLOWED_ORIGINS    origini CORS separate da virgola (es. https://tuo-frontend.vercel.app)
-  DATA_DIR           cartella con storico-gare.md e tracker.csv (default: ./data)
+  DATA_DIR           cartella dei dati locali: archivio Excel, gare, documenti
   PROMPTS_DIR        cartella del prompt di sistema (default: ./prompts)
 
 Avvio locale:  uvicorn main:app --reload
@@ -23,9 +23,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import archive
+import archivio as arch
 import chatbot
 import drive
-import tracker as trk
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
 # La documentazione automatica (/docs) elenca tutti i comandi dell'API: in
@@ -138,14 +138,6 @@ class SimulaIn(BaseModel):
     concorrenti: list[ConcorrenteIn] = []
 
 
-class RigaTracker(BaseModel):
-    criterio: str
-    tipo: Literal["tabellare", "qualitativo"] = "qualitativo"
-    resa: float = Field(ge=0, le=1)
-    n: int = 0
-    note: str = ""
-
-
 class TestoIn(BaseModel):
     testo: str
 
@@ -219,7 +211,7 @@ def api_simula(body: SimulaIn):
         soglia_sbarramento=c.soglia_sbarramento, riparametrazione=c.riparametrazione,
     )
     conc = [Concorrente(x.nome, x.livello_tecnico, x.ribasso) for x in body.concorrenti if x.nome.strip()]
-    res = simula(cfg, trk.carica(), body.ribasso_nostro, conc)
+    res = simula(cfg, {}, body.ribasso_nostro, conc)
 
     def off(o):
         return {"nome": o.nome, "tecnico": o.tecnico, "economico": o.economico, "ribasso": o.ribasso,
@@ -234,36 +226,6 @@ def api_simula(body: SimulaIn):
         "sensibilita": res["sensibilita"],
         "somma_criteri": sum(x.punti_max for x in cfg.criteri),
     }
-
-
-# ---------------------------------------------------------------------------
-# Tracker
-# ---------------------------------------------------------------------------
-
-@app.get("/api/tracker")
-def api_tracker():
-    return {"righe": trk.leggi_righe()}
-
-
-@app.put("/api/tracker")
-def api_tracker_salva(righe: list[RigaTracker]):
-    pulite = [r.model_dump() for r in righe if r.criterio.strip()]
-    trk.scrivi_righe(pulite)
-    return {"righe": trk.leggi_righe()}
-
-
-@app.get("/api/tracker/raw")
-def api_tracker_raw():
-    return {"testo": trk.leggi_testo()}
-
-
-@app.put("/api/tracker/raw")
-def api_tracker_raw_salva(body: TestoIn):
-    err = trk.valida_testo(body.testo)
-    if err:
-        raise HTTPException(400, err)
-    trk.salva_testo(body.testo)
-    return {"righe": trk.leggi_righe()}
 
 
 # ---------------------------------------------------------------------------
@@ -296,6 +258,80 @@ def api_archivio_aggiungi(s: SchedaIn):
 
 
 # ---------------------------------------------------------------------------
+# Archivi storici: Sociale, Cultura, Servizi educativi
+# ---------------------------------------------------------------------------
+# Tre archivi con le stesse 34 colonne. Ogni riga e' modificabile e
+# cancellabile; la conferma prima di cancellare la chiede il frontend.
+
+from fastapi import Body  # noqa: E402
+
+
+def _archivio_valido(nome: str) -> str:
+    if nome not in arch.ARCHIVI:
+        raise HTTPException(404, f"Archivio «{nome}» inesistente. Validi: {', '.join(arch.ARCHIVI)}.")
+    return nome
+
+
+def _proteggi(fn, *a, **kw):
+    """Traduce gli errori dell'archivio in risposte leggibili dall'utente."""
+    try:
+        return fn(*a, **kw)
+    except arch.ErroreArchivio as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/archivi")
+def api_archivi():
+    """Elenco degli archivi, con quante gare contengono e da dove vengono letti."""
+    return {"archivi": arch.ARCHIVI, "colonne": arch.COLONNE, "stato": arch.stato(),
+            "esiti": arch.ESITI, "stati_gara": arch.STATI_GARA}
+
+
+@app.get("/api/archivi/{nome}")
+def api_archivio_righe(nome: str, testo: str = "", regione: str = "", esito: str = "", anno: str = ""):
+    _archivio_valido(nome)
+    righe = _proteggi(arch.cerca, nome, testo=testo, regione=regione, esito=esito, anno=anno)
+    return {"archivio": nome, "colonne": arch.COLONNE, "righe": righe, "totale": len(righe)}
+
+
+@app.get("/api/archivi/{nome}/filtri")
+def api_archivio_filtri(nome: str):
+    _archivio_valido(nome)
+    return _proteggi(arch.valori_filtri, nome)
+
+
+@app.post("/api/archivi/{nome}")
+def api_archivio_aggiungi(nome: str, riga: dict = Body(...)):
+    _archivio_valido(nome)
+    return _proteggi(arch.aggiungi, nome, riga)
+
+
+@app.patch("/api/archivi/{nome}/{id_gara}")
+def api_archivio_aggiorna(nome: str, id_gara: str, campi: dict = Body(...)):
+    _archivio_valido(nome)
+    return _proteggi(arch.aggiorna, nome, id_gara, campi)
+
+
+@app.delete("/api/archivi/{nome}/{id_gara}")
+def api_archivio_elimina(nome: str, id_gara: str):
+    _archivio_valido(nome)
+    _proteggi(arch.elimina, nome, id_gara)
+    return {"ok": True}
+
+
+@app.get("/api/archivi-esporta")
+def api_archivi_esporta():
+    """Scarica tutti e tre gli archivi in un Excel: e' la copia di sicurezza."""
+    from fastapi.responses import Response
+    dati = _proteggi(arch.esporta_excel)
+    return Response(
+        dati,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Archivio_Gare360_unificato.xlsx"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Assistente
 # ---------------------------------------------------------------------------
 
@@ -314,7 +350,7 @@ def api_prompt_salva(body: TestoIn):
 def api_chat(body: ChatIn):
     if not body.messaggi or body.messaggi[-1].role != "user":
         raise HTTPException(400, "L'ultimo messaggio deve essere dell'utente.")
-    system = chatbot.costruisci_system(archive.leggi_testo(), trk.carica(), body.includi_contesto)
+    system = chatbot.costruisci_system(archive.leggi_testo(), {}, body.includi_contesto)
     try:
         testo = chatbot.rispondi([m.model_dump() for m in body.messaggi], system, body.modello)
     except Exception as e:  # noqa: BLE001
@@ -443,7 +479,7 @@ def api_documenti_tutti():
 # --- Assistente sulla gara ------------------------------------------------------
 
 def _system_per(g: dict) -> str:
-    return chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), trk.carica())
+    return chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), {})
 
 
 @app.post("/api/gare/{gid}/chat")
@@ -529,6 +565,19 @@ def api_gara_estrai_simulatore(gid: str, body: ModelloIn = ModelloIn()):
 
 
 # --- Scadenze / calendario -------------------------------------------------------
+
+@app.post("/api/archivi-importa")
+async def api_archivi_importa(file: UploadFile = File(...)):
+    """Carica il file Excel dell'archivio. Rifiuta il file se le colonne non tornano."""
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        conteggi = arch.importa_excel(dati)
+    except arch.ErroreArchivio as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True, "gare_per_archivio": conteggi}
+
 
 @app.get("/api/scadenze")
 def api_scadenze(giorni: int = 7, mese: Optional[str] = None):

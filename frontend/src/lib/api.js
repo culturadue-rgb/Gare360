@@ -63,14 +63,17 @@ export const api = {
   health: () => call("/api/health"),
   simula: (payload) => call("/api/simula", { method: "POST", body: json(payload) }),
 
-  tracker: () => call("/api/tracker"),
-  salvaTracker: (righe) => call("/api/tracker", { method: "PUT", body: json(righe) }),
-  trackerRaw: () => call("/api/tracker/raw"),
-  salvaTrackerRaw: (testo) => call("/api/tracker/raw", { method: "PUT", body: json({ testo }) }),
-
   archivio: () => call("/api/archivio"),
   salvaArchivioRaw: (testo) => call("/api/archivio/raw", { method: "PUT", body: json({ testo }) }),
   aggiungiScheda: (scheda) => call("/api/archivio/schede", { method: "POST", body: json(scheda) }),
+
+  // --- Archivi storici (Sociale, Cultura, Servizi educativi) ---
+  archivi: () => call("/api/archivi"),
+  archivioRighe: (nome, filtri = {}) => call(`/api/archivi/${encodeURIComponent(nome)}` + qs(filtri)),
+  archivioFiltri: (nome) => call(`/api/archivi/${encodeURIComponent(nome)}/filtri`),
+  archivioAggiungi: (nome, riga) => call(`/api/archivi/${encodeURIComponent(nome)}`, { method: "POST", body: json(riga) }),
+  archivioAggiorna: (nome, id, campi) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "PATCH", body: json(campi) }),
+  archivioElimina: (nome, id) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   prompt: () => call("/api/prompt"),
   salvaPrompt: (testo) => call("/api/prompt", { method: "PUT", body: json({ testo }) }),

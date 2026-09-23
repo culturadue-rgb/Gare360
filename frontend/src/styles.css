@@ -267,3 +267,54 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .accesso-riquadro input:focus { outline: 2px solid var(--lime); border-color: var(--lime); }
 .nota.piccola { font-size: .8rem; color: var(--grigio); margin: 0; }
 .btn.esci { margin-left: .8rem; padding: .25rem .7rem; font-size: .85rem; }
+
+/* --- Archivi storici ------------------------------------------------------ */
+.archivio-filtri { flex-wrap: wrap; gap: .5rem; align-items: center; }
+.archivio-filtri input[type="search"] { min-width: 15rem; flex: 1 1 15rem; }
+.archivio-filtri input, .archivio-filtri select {
+  padding: .35rem .5rem; border: 1px solid var(--linea);
+  border-radius: var(--raggio); font: inherit;
+}
+
+/* La tabella ha molte colonne: scorre dentro il suo riquadro, non trascina
+   tutta la pagina di lato. */
+.tabella-scorrevole { overflow-x: auto; margin-top: .6rem; }
+.tabella-archivio { border-collapse: collapse; width: 100%; font-size: .87rem; }
+.tabella-archivio th, .tabella-archivio td {
+  padding: .4rem .55rem; border-bottom: 1px solid var(--linea);
+  text-align: left; white-space: nowrap;
+  max-width: 18rem; overflow: hidden; text-overflow: ellipsis;
+}
+.tabella-archivio th { background: var(--blu-tenue); color: var(--blu); font-weight: 600; }
+.tabella-archivio tr.aperta > td { background: var(--lime-tenue); }
+.tabella-archivio .mancante { color: var(--grigio); }
+.tabella-archivio .azioni-riga { white-space: nowrap; }
+
+.scheda-modifica {
+  margin-top: 1rem; padding: 1rem;
+  border: 1px solid var(--linea); border-top: 4px solid var(--lime);
+  border-radius: var(--raggio); background: var(--blu-tenue);
+}
+.scheda-modifica h3 { margin: 0 0 .3rem; color: var(--blu); }
+.griglia-campi {
+  display: grid; gap: .7rem; margin: .8rem 0;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+.griglia-campi .campo { display: flex; flex-direction: column; gap: .2rem; }
+.griglia-campi .campo > span { font-size: .82rem; color: var(--blu); font-weight: 600; }
+.griglia-campi input, .griglia-campi textarea {
+  padding: .4rem .5rem; border: 1px solid var(--linea);
+  border-radius: var(--raggio); font: inherit; background: var(--bianco);
+}
+.griglia-campi input[readonly] { background: var(--blu-tenue); color: var(--grigio); }
+
+.btn.piccolo { padding: .2rem .6rem; font-size: .82rem; }
+.btn.pericolo { background: var(--rosso); color: var(--bianco); border: 0; }
+.btn.pericolo:hover { filter: brightness(.9); }
+.nav .voce-piccola { font-size: .85rem; opacity: .75; margin-top: .4rem; }
+
+/* Un colore per ogni passo del flusso di gara. */
+.stato.decidere    { background: var(--blu-tenue);  color: var(--blu); }
+.stato.lavorazione { background: var(--lime);       color: var(--blu-scuro); }
+.stato.conclusa    { background: var(--blu);        color: var(--bianco); }
+.stato.archiviata  { background: var(--linea);      color: var(--grigio); }

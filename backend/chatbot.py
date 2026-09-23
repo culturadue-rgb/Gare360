@@ -2,7 +2,7 @@
 Assistente AI "stratega-gare".
 
 Prompt di sistema in prompts/stratega_gare.md (placeholder). Ad ogni risposta
-viene arricchito con archivio storico e tracker.
+viene arricchito con l'archivio storico delle gare.
 
 La chiave API è letta SOLO dalla variabile d'ambiente ANTHROPIC_API_KEY.
 """
@@ -26,14 +26,16 @@ def salva_prompt(testo: str) -> None:
     PROMPT_PATH.write_text(testo, encoding="utf-8")
 
 
-def costruisci_system(archivio_md: str, tracker: dict, includi_contesto: bool = True) -> str:
+def costruisci_system(archivio_md: str, dati_storici: dict | None = None,
+                      includi_contesto: bool = True) -> str:
     system = carica_prompt()
     if includi_contesto:
         system += (
             "\n\n---\n# Contesto aziendale (dati reali, usali nelle risposte)\n\n"
-            "## Tracker prestazioni per criterio (resa = frazione dei punti max presa di solito)\n```json\n"
-            + json.dumps(tracker.get("criteri", {}), ensure_ascii=False, indent=2)
-            + "\n```\n\n## Archivio storico gare (markdown)\n"
+            + (("## Dati ricavati dall'archivio storico\n```json\n"
+                + json.dumps(dati_storici, ensure_ascii=False, indent=2)
+                + "\n```\n\n") if dati_storici else "")
+            + "## Archivio storico gare\n"
             + archivio_md
         )
     return system
@@ -87,9 +89,9 @@ def estrai_json(istruzioni: str, testo: str, modello: str | None = None) -> dict
     return json.loads(pulito)
 
 
-def system_gara(contesto_gara: str, archivio_md: str, tracker: dict) -> str:
+def system_gara(contesto_gara: str, archivio_md: str, dati_storici: dict | None = None) -> str:
     """Prompt di sistema per lavorare su una gara specifica: prompt base + metodologia + gara."""
-    base = costruisci_system(archivio_md, tracker, includi_contesto=True)
+    base = costruisci_system(archivio_md, dati_storici, includi_contesto=True)
     return (base + "\n\n---\n"
             "# Gara su cui stai lavorando ora\n"
             "Usa i documenti qui sotto come fonte primaria. Cita il documento da cui prendi ogni informazione. "
@@ -98,8 +100,8 @@ def system_gara(contesto_gara: str, archivio_md: str, tracker: dict) -> str:
 
 ISTRUZIONI_VALUTAZIONE = """Valuta questa gara per decidere se partecipare. Struttura la risposta così:
 1. **Sintesi** (3 righe): oggetto, ente, importo, durata, scadenza.
-2. **Requisiti di partecipazione**: generali, economico-finanziari, tecnico-professionali; per ciascuno indica se dai dati aziendali (tracker/archivio) risultiamo coperti, scoperti o da verificare.
-3. **Criteri di valutazione e punteggi**: tabella criterio / tipo / punti max / nostra resa attesa dal tracker / punti attesi; formula prezzo; soglia di sbarramento.
+2. **Requisiti di partecipazione**: generali, economico-finanziari, tecnico-professionali; per ciascuno indica se dall'archivio storico risultiamo coperti, scoperti o da verificare.
+3. **Criteri di valutazione e punteggi**: tabella criterio / tipo / punti max / nostra resa attesa dall'archivio / punti attesi; formula prezzo; soglia di sbarramento.
 4. **Criteri premianti e leve**: dove si vincono i punti, migliorie richieste o apprezzate.
 5. **Criticità e rischi**: clausole onerose, penali, tempi, personale da riassorbire, obblighi particolari.
 6. **Scadenze e adempimenti**: date di sopralluogo, chiarimenti, presentazione, con ore.

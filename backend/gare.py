@@ -25,8 +25,29 @@ GARE_DIR = DATA_DIR / "gare"
 
 MEMORIA_GIORNI = 15
 SETTORI = ["Cultura", "Sociale", "Altro"]
-STATI = ["Da valutare", "In analisi", "GO", "NO GO", "In preparazione", "Presentata", "Archiviata"]
-STATI_CONCLUSI = {"Presentata", "Archiviata", "NO GO"}
+# Il flusso di una gara, in ordine. Si va avanti un passo per volta e si puo'
+# sempre tornare indietro.
+STATO_INIZIALE = "Da decidere"
+STATI = ["Da decidere", "In lavorazione", "Conclusa", "Archiviata"]
+
+# "Conclusa" e "Archiviata" non hanno piu' scadenze da rispettare: spariscono
+# dal calendario e dagli avvisi di urgenza.
+STATI_CONCLUSI = {"Conclusa", "Archiviata"}
+
+# Conversione dagli stati vecchi. Serve una volta sola, alla prima lettura di
+# ogni gara salvata prima del cambio.
+CONVERSIONE_STATI = {
+    "Da valutare": "Da decidere",
+    "In analisi": "Da decidere",
+    "GO": "In lavorazione",
+    "In preparazione": "In lavorazione",
+    # Tutto cio' che era gia' chiuso finisce in Archiviata: sono gare su cui non
+    # si lavora piu'. "Conclusa" resta uno stato del flusso, ma ci si arriva solo
+    # da qui in avanti, non per conversione.
+    "NO GO": "Archiviata",
+    "Presentata": "Archiviata",
+    "Archiviata": "Archiviata",
+}
 CATEGORIE_DOC = ["bando", "disciplinare", "capitolato", "criteri di valutazione", "allegato tecnico",
                  "chiarimenti", "documento economico", "documento amministrativo", "bozza interna", "altro"]
 MAX_CHARS_DOC = 60_000        # testo tenuto per documento
@@ -43,6 +64,18 @@ def _now() -> str:
 
 def _dir(gid: str) -> Path:
     return GARE_DIR / gid
+
+
+def converti_stato(stato: str | None) -> str:
+    """
+    Riporta uno stato al nuovo flusso. Uno stato gia' nuovo resta com'e'; uno
+    vecchio viene tradotto; uno sconosciuto torna all'inizio invece di far
+    sparire la gara dagli elenchi.
+    """
+    s = (stato or "").strip()
+    if s in STATI:
+        return s
+    return CONVERSIONE_STATI.get(s, STATO_INIZIALE)
 
 
 def _carica_raw(gid: str) -> dict:
@@ -67,7 +100,7 @@ def crea(titolo: str, ente: str = "", settore: str = "Altro", scadenza: str | No
         "ente": ente.strip(),
         "settore": settore if settore in SETTORI else "Altro",
         "scadenza": scadenza or None,
-        "stato": "Da valutare",
+        "stato": STATO_INIZIALE,
         "note": note,
         "base_asta": base_asta,
         "creata": _now(),
@@ -95,8 +128,7 @@ def aggiorna(gid: str, campi: dict) -> dict:
             g[k] = campi[k]
     if g["settore"] not in SETTORI:
         g["settore"] = "Altro"
-    if g["stato"] not in STATI:
-        g["stato"] = "Da valutare"
+    g["stato"] = converti_stato(g["stato"])
     g["aggiornata"] = _now()
     return _salva(g)
 
@@ -118,6 +150,8 @@ def tocca(g: dict) -> dict:
 
 def _controlla_memoria(g: dict) -> dict:
     """Se sono passati più di MEMORIA_GIORNI dall'ultima attività, archivia la memoria."""
+    # Una gara salvata col flusso vecchio viene tradotta qui, alla prima lettura.
+    g["stato"] = converti_stato(g.get("stato"))
     if g.get("memoria_attiva"):
         ultima = datetime.fromisoformat(g.get("ultima_attivita") or g["creata"])
         if datetime.now() - ultima > timedelta(days=MEMORIA_GIORNI):

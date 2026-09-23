@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import { classeSettore, fmtDataOra, giorniLabel } from "../lib/util.js";
 
-const classeStato = (s) => (s === "GO" ? "go" : s === "NO GO" ? "nogo" : "");
+// Un colore per ogni passo del flusso, così lo stato si riconosce a colpo d'occhio.
+const classeStato = (s) => ({
+  "Da decidere": "decidere",
+  "In lavorazione": "lavorazione",
+  "Conclusa": "conclusa",
+  "Archiviata": "archiviata",
+}[s] || "");
 
 export function CardGara({ g, attiva, onApri }) {
   return (
@@ -26,29 +32,38 @@ export function CardGara({ g, attiva, onApri }) {
   );
 }
 
-export default function GareInLavorazione({ concluse = false, garaCorrente, onApri, versione, titolo = "Gare in lavorazione", limite }) {
+export default function GareInLavorazione({ stato, garaCorrente, onApri, versione, titolo, limite }) {
   const [gare, setGare] = useState([]);
   const [filtro, setFiltro] = useState("");
   const [errore, setErrore] = useState(null);
 
+  // Senza `stato` si mostrano le gare ancora aperte (Home); con `stato` solo
+  // quelle di quel passo del flusso.
   useEffect(() => {
-    api.gare({ concluse, settore: filtro || undefined }).then((r) => setGare(r.gare)).catch((e) => setErrore(e.message));
-  }, [concluse, filtro, versione]);
+    const filtri = { settore: filtro || undefined };
+    if (stato) filtri.stato = stato; else filtri.concluse = false;
+    api.gare(filtri).then((r) => setGare(r.gare)).catch((e) => setErrore(e.message));
+  }, [stato, filtro, versione]);
 
   const mostrate = limite ? gare.slice(0, limite) : gare;
 
   return (
     <div className="riquadro">
-      <h2>{titolo}<small>{gare.length} {gare.length === 1 ? "gara" : "gare"}</small></h2>
+      <h2>{titolo || "Gare aperte"}<small>{gare.length} {gare.length === 1 ? "gara" : "gare"}</small></h2>
       <div className="filtri">
         {[["", "Tutte"], ["Cultura", "Cultura"], ["Sociale", "Sociale"], ["Altro", "Altro"]].map(([v, l]) => (
           <button key={v} aria-pressed={filtro === v} onClick={() => setFiltro(v)}>{l}</button>
         ))}
       </div>
       {errore && <div className="avviso errore">{errore}</div>}
-      {mostrate.length === 0 && <div className="vuoto">{concluse ? "Nessuna gara conclusa." : "Nessuna gara in lavorazione. Creane una dal pulsante a sinistra o trascina un PDF nelle scadenze."}</div>}
+      {mostrate.length === 0 && (
+        <div className="vuoto">
+          {stato ? `Nessuna gara nello stato «${stato}».`
+                 : "Nessuna gara aperta. Creane una dal pulsante «+ Nuova gara»."}
+        </div>
+      )}
       {mostrate.map((g) => <CardGara key={g.id} g={g} attiva={g.id === garaCorrente} onApri={onApri} />)}
-      {limite && gare.length > limite && <p className="nota">Altre {gare.length - limite} gare nella sezione «Gare in lavorazione».</p>}
+      {limite && gare.length > limite && <p className="nota">Altre {gare.length - limite} gare nelle sezioni del menu.</p>}
     </div>
   );
 }

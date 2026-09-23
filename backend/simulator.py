@@ -1,12 +1,14 @@
 """
 Simulatore deterministico di gara (OEPV).
 
-Nessuna casualità: dati gli stessi input (configurazione di gara, tracker,
+Nessuna casualità: dati gli stessi input (configurazione di gara, rese storiche,
 ribassi dei concorrenti) restituisce sempre lo stesso risultato.
 
 Flusso:
   1. Per ogni criterio tecnico, il punteggio atteso = punti max × resa storica
-     letta dal tracker (se il criterio non è nel tracker si usa una resa di default).
+     letta dallo storico (se il criterio non c'è si usa una resa di default).
+     NOTA: la fonte delle rese diventeranno gli archivi nella Fase 4; qui la
+     struttura è già quella, basta passarle.
   2. Il punteggio economico si calcola con la formula scelta (interpolazione lineare,
      proporzionale inversa, o bilineare con soglia — le tre più diffuse nei disciplinari).
   3. I concorrenti sono "profili" deterministici: livello tecnico (frazione del max)
@@ -30,7 +32,7 @@ class Criterio:
     nome: str
     tipo: str              # "tabellare" | "qualitativo"
     punti_max: float
-    resa_override: Optional[float] = None  # 0..1, se impostata scavalca il tracker
+    resa_override: Optional[float] = None  # 0..1, se impostata scavalca lo storico
 
 
 @dataclass
@@ -74,11 +76,11 @@ class RisultatoOfferente:
 RESA_DEFAULT = {"tabellare": 0.80, "qualitativo": 0.65}
 
 
-def punteggio_tecnico_nostro(cfg: ConfigGara, tracker: dict) -> tuple[float, dict]:
+def punteggio_tecnico_nostro(cfg: ConfigGara, resa_storica: dict) -> tuple[float, dict]:
     """Somma dei punti attesi per criterio. Restituisce (totale, dettaglio)."""
     dettaglio = {}
     totale = 0.0
-    stats = tracker.get("criteri", {})
+    stats = resa_storica.get("criteri", {})
     for c in cfg.criteri:
         if c.resa_override is not None:
             resa, fonte = c.resa_override, "manuale"
@@ -132,11 +134,11 @@ def punteggio_economico(ribasso: float, ribassi_tutti: list[float], cfg: ConfigG
 # Simulazione
 # ---------------------------------------------------------------------------
 
-def simula(cfg: ConfigGara, tracker: dict, ribasso_nostro: float,
+def simula(cfg: ConfigGara, resa_storica: dict, ribasso_nostro: float,
            concorrenti: list[Concorrente]) -> dict:
     tec_max = cfg.punti_tecnico
 
-    nostro_tec, dettaglio = punteggio_tecnico_nostro(cfg, tracker)
+    nostro_tec, dettaglio = punteggio_tecnico_nostro(cfg, resa_storica)
     offerenti = [RisultatoOfferente("Noi", nostro_tec, 0.0, ribasso_nostro, dettaglio_criteri=dettaglio)]
     for c in concorrenti:
         offerenti.append(RisultatoOfferente(c.nome, round(tec_max * c.livello_tecnico, 3), 0.0, c.ribasso))
@@ -166,7 +168,7 @@ def simula(cfg: ConfigGara, tracker: dict, ribasso_nostro: float,
     posizione = next(i for i, o in enumerate(graduatoria, 1) if o.nome == "Noi")
     vincitore = graduatoria[0]
 
-    sens = sensibilita(cfg, tracker, nostro_tec, concorrenti, noi, vincitore)
+    sens = sensibilita(cfg, resa_storica, nostro_tec, concorrenti, noi, vincitore)
 
     return {
         "graduatoria": graduatoria,
@@ -178,7 +180,7 @@ def simula(cfg: ConfigGara, tracker: dict, ribasso_nostro: float,
     }
 
 
-def sensibilita(cfg, tracker, nostro_tec, concorrenti, noi, vincitore) -> dict:
+def sensibilita(cfg, resa_storica, nostro_tec, concorrenti, noi, vincitore) -> dict:
     """Quanto ribasso serve per vincere a tecnico invariato (ricerca deterministica
     a passi di 0.1) e quanti punti tecnici servono a ribasso invariato."""
     out = {"ribasso_minimo_vittoria": None, "punti_tecnici_mancanti": 0.0}
@@ -194,7 +196,7 @@ def sensibilita(cfg, tracker, nostro_tec, concorrenti, noi, vincitore) -> dict:
     # Ribasso minimo: scansione da 0 a 100 a passi di 0.1
     r = 0.0
     while r <= 100.0:
-        res = _totale_con_ribasso(cfg, tracker, r, concorrenti)
+        res = _totale_con_ribasso(cfg, resa_storica, r, concorrenti)
         if res["noi_vince"]:
             out["ribasso_minimo_vittoria"] = round(r, 1)
             break
@@ -206,10 +208,10 @@ def sensibilita(cfg, tracker, nostro_tec, concorrenti, noi, vincitore) -> dict:
     return out
 
 
-def _totale_con_ribasso(cfg, tracker, ribasso, concorrenti) -> dict:
+def _totale_con_ribasso(cfg, resa_storica, ribasso, concorrenti) -> dict:
     """Ricalcolo leggero senza sensibilità (evita ricorsione)."""
     tec_max = cfg.punti_tecnico
-    nostro_tec, _ = punteggio_tecnico_nostro(cfg, tracker)
+    nostro_tec, _ = punteggio_tecnico_nostro(cfg, resa_storica)
     tecs = {"Noi": nostro_tec}
     for c in concorrenti:
         tecs[c.nome] = round(tec_max * c.livello_tecnico, 3)
