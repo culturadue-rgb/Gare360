@@ -60,12 +60,15 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 # Protezione con password condivisa
 # ---------------------------------------------------------------------------
-# Tutte le rotte /api sono protette da un'unica password, impostata su Render
-# nella variabile d'ambiente APP_PASSWORD. Il frontend la chiede all'ingresso e
-# poi la manda a ogni richiesta nell'intestazione X-App-Password.
+# La protezione e' FACOLTATIVA ed e' SPENTA finche' non la si accende.
 #
-# Se APP_PASSWORD non e' impostata il backend si BLOCCA invece di restare
-# aperto: meglio un'app ferma di un'app che chiunque puo' leggere e svuotare.
+#   APP_PASSWORD non impostata  -> app aperta, si entra senza chiedere nulla
+#   APP_PASSWORD impostata      -> serve la password su tutte le rotte /api
+#
+# Per accenderla basta aggiungere APP_PASSWORD fra le variabili d'ambiente su
+# Render: il frontend se ne accorge da solo e mostra la schermata di accesso.
+# Finche' resta spenta, chiunque conosca l'indirizzo del backend puo' leggere e
+# cancellare le gare: tenere privato il repository evita che l'indirizzo giri.
 
 INTESTAZIONE_PASSWORD = "X-App-Password"
 ROTTE_LIBERE = {"/api/health"}
@@ -85,13 +88,10 @@ async def controlla_password(request: Request, call_next):
     if request.method == "OPTIONS" or not percorso.startswith("/api") or percorso in ROTTE_LIBERE:
         return await call_next(request)
 
+    # Nessuna password impostata: l'app e' aperta, si passa senza controlli.
     attesa = password_configurata()
     if not attesa:
-        return JSONResponse(
-            {"detail": "Il server non ha una password configurata (APP_PASSWORD). "
-                       "Impostala fra le variabili d'ambiente su Render."},
-            status_code=503,
-        )
+        return await call_next(request)
 
     ricevuta = request.headers.get(INTESTAZIONE_PASSWORD, "")
     # compare_digest evita di rivelare la password un carattere alla volta
