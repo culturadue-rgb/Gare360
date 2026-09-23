@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 import archive
 import chatbot
+import drive
 import tracker as trk
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
@@ -200,7 +201,8 @@ class ChatIn(BaseModel):
 def health():
     return {"ok": True, "chiave_api_configurata": chatbot.chiave_configurata(),
             "modello_default": chatbot.MODELLO_DEFAULT,
-            "password_configurata": bool(password_configurata())}
+            "password_configurata": bool(password_configurata()),
+            "drive": drive.stato()}
 
 
 # ---------------------------------------------------------------------------
