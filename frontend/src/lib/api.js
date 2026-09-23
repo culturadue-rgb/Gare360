@@ -122,6 +122,14 @@ Object.assign(api, {
   estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
   controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
 
+  // --- Calendario ---
+  calendario: (p = {}) => call("/api/calendario" + qs(p)),
+  aggiungiVoceCalendario: (v) => call("/api/calendario", { method: "POST", body: json(v) }),
+  aggiornaVoceCalendario: (id, campi) => call(`/api/calendario/${id}`, { method: "PATCH", body: json(campi) }),
+  eliminaVoceCalendario: (id) => call(`/api/calendario/${id}`, { method: "DELETE" }),
+  rimuoviScadenzeGara: (gid) => call(`/api/gare/${gid}/scadenze`, { method: "DELETE" }),
+  rigeneraScadenzeGara: (gid) => call(`/api/gare/${gid}/scadenze/rigenera`, { method: "POST" }),
+
   scadenze: (p = {}) => call("/api/scadenze" + qs(p)),
   estraiScadenza: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scadenze/estrai", f); },
   confermaScadenza: (g) => call("/api/scadenze/conferma", { method: "POST", body: json(g) }),

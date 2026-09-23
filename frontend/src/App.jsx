@@ -4,7 +4,7 @@ import Accesso from "./components/Accesso.jsx";
 import SchedaGara from "./components/SchedaGara.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
-import Scadenze from "./components/Scadenze.jsx";
+import Calendario from "./components/Calendario.jsx";
 import Simulatore from "./components/Simulatore.jsx";
 import Archivio from "./components/Archivio.jsx";
 import Impostazioni from "./components/Impostazioni.jsx";
@@ -169,7 +169,7 @@ export default function App() {
         <main className="col-centro">{centro}</main>
 
         <aside className="col-destra">
-          <Scadenze onApri={apriGara} versione={versione} costanti={costanti} onCreata={(g) => { ricarica(); apriGara(g.id); }} />
+          <Calendario onApri={apriGara} versione={versione} />
           {(
             <div className="riquadro compatto" id="simulatore">
               <h2>Simulatore<small>{garaCorrente ? `gara: ${garaCorrente.titolo}` : "nessuna gara aperta"}</small></h2>

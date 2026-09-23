@@ -339,3 +339,42 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 }
 .estrazione { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-bottom: .6rem; }
 .avviso.attenzione { border-left: 4px solid var(--lime-scuro); background: var(--lime-tenue); }
+
+/* --- Calendario ----------------------------------------------------------- */
+.cal-testa { display: flex; gap: .3rem; margin-bottom: .5rem; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-intestazione {
+  font-size: .7rem; text-transform: uppercase; color: var(--grigio);
+  text-align: center; padding: .2rem 0;
+}
+.cal-vuoto { min-height: 2.1rem; }
+.cal-giorno {
+  min-height: 2.1rem; border: 1px solid var(--linea); border-radius: 6px;
+  padding: .15rem .25rem; position: relative; background: var(--bianco);
+}
+.cal-giorno .numero { font-size: .72rem; color: var(--grigio); }
+.cal-giorno.oggi { border-color: var(--lime); border-width: 2px; }
+.cal-giorno.con-voci { background: var(--blu-tenue); }
+.pallino { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin: 0 1px; }
+.pallino.scaduta { background: var(--rosso); }
+.pallino.alta    { background: var(--lime-scuro); }
+.pallino.media   { background: var(--blu); }
+.pallino.bassa   { background: var(--linea); }
+
+.scad-lista { list-style: none; padding: 0; margin: .4rem 0; }
+.scad-lista li {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem;
+  padding: .45rem 0; border-bottom: 1px solid var(--linea);
+}
+.scad-lista .tipo {
+  font-size: .72rem; text-transform: uppercase; color: var(--blu);
+  background: var(--blu-tenue); padding: .1rem .35rem; border-radius: 5px;
+}
+.scad-azioni { display: flex; gap: .2rem; flex-shrink: 0; }
+.urg.scaduta { color: var(--rosso); font-weight: 600; }
+.urg.alta    { color: var(--lime-scuro); font-weight: 600; }
+.voce-modifica { width: 100%; background: var(--blu-tenue); padding: .5rem; border-radius: var(--raggio); }
+.voce-modifica .campo { display: flex; flex-direction: column; gap: .15rem; margin-bottom: .35rem; }
+.voce-modifica input, .voce-modifica select {
+  padding: .3rem .4rem; border: 1px solid var(--linea); border-radius: 6px; font: inherit;
+}

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 import archive
 import archivio as arch
+import calendario as cal
 import chatbot
 import drive
 import scheda as mod_scheda
@@ -431,10 +432,44 @@ def api_gara(gid: str):
 
 @app.patch("/api/gare/{gid}")
 def api_gara_aggiorna(gid: str, body: GaraPatch):
+    campi = body.model_dump(exclude_unset=True)
     try:
-        return gare.aggiorna(gid, body.model_dump(exclude_unset=True))
+        prima = gare.carica(gid)["stato"]
+        g = gare.aggiorna(gid, campi)
     except KeyError:
         raise HTTPException(404, "Gara non trovata.")
+
+    dopo = g["stato"]
+    calendario_info = None
+
+    # Entrando in lavorazione le date della scheda diventano voci di calendario.
+    if prima != dopo and dopo == "In lavorazione":
+        calendario_info = {"azione": "generate", **cal.genera_da_gara(g)}
+
+    # Tornando indietro NON si cancella nulla di testa propria: si segnala
+    # quante voci ci sono, così il frontend puo' chiedere se toglierle.
+    elif prima == "In lavorazione" and dopo == "Da decidere":
+        n = cal.conta_di_gara(gid)
+        if n:
+            calendario_info = {"azione": "chiedi_rimozione", "voci": n}
+
+    return {**g, "calendario": calendario_info} if calendario_info else g
+
+
+@app.delete("/api/gare/{gid}/scadenze")
+def api_gara_scadenze_rimuovi(gid: str):
+    """Toglie dal calendario tutte le scadenze di una gara. Lo chiede l'utente."""
+    return {"rimosse": cal.elimina_di_gara(gid)}
+
+
+@app.post("/api/gare/{gid}/scadenze/rigenera")
+def api_gara_scadenze_rigenera(gid: str):
+    """Rilegge le date dalla scheda. Non tocca le voci corrette a mano."""
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    return cal.genera_da_gara(g)
 
 
 @app.delete("/api/gare/{gid}")
@@ -636,8 +671,55 @@ def api_criteri_controlla(criteri: dict = Body(...)):
     return {"avvisi": mod_scheda.controlla(norm), "somma_criteri": mod_scheda.somma_criteri(norm)}
 
 
+@app.get("/api/calendario")
+def api_calendario(giorni: int = 30, mese: Optional[str] = None):
+    titoli = {g["id"]: g["titolo"] for g in gare.elenco()}
+    return cal.vista(mese=mese, giorni=giorni, titoli_gare=titoli)
+
+
+class VoceCalendario(BaseModel):
+    id_gara: str = ""
+    tipo: str = "altro"
+    data: str
+    ora: str = ""
+    descrizione: str = ""
+
+
+class VoceCalendarioPatch(BaseModel):
+    tipo: Optional[str] = None
+    data: Optional[str] = None
+    ora: Optional[str] = None
+    descrizione: Optional[str] = None
+
+
+@app.post("/api/calendario")
+def api_calendario_aggiungi(voce: VoceCalendario):
+    try:
+        return cal.aggiungi(voce.model_dump())
+    except cal.ErroreCalendario as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.patch("/api/calendario/{id_evento}")
+def api_calendario_aggiorna(id_evento: str, campi: VoceCalendarioPatch):
+    try:
+        return cal.aggiorna(id_evento, campi.model_dump(exclude_unset=True))
+    except cal.ErroreCalendario as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/calendario/{id_evento}")
+def api_calendario_elimina(id_evento: str):
+    try:
+        cal.elimina(id_evento)
+    except cal.ErroreCalendario as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
 @app.get("/api/scadenze")
 def api_scadenze(giorni: int = 7, mese: Optional[str] = None):
+    """Compatibilità: la vecchia vista per settore, ancora usata dalla colonna destra."""
     return gare.scadenze(giorni=giorni, mese=mese)
 
 
