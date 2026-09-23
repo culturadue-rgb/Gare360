@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./lib/api.js";
+import { api, auth } from "./lib/api.js";
+import Accesso from "./components/Accesso.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
 import Scadenze, { VistaMese } from "./components/Scadenze.jsx";
@@ -24,6 +25,10 @@ const SEZIONI = [
 ];
 
 export default function App() {
+  // Se il server non chiede la password (caso normale) si entra subito, senza
+  // alcuna schermata. La richiesta compare solo quando APP_PASSWORD è
+  // impostata su Render.
+  const [entrato, setEntrato] = useState(false);
   const [sezione, setSezione] = useState("home");
   const [salute, setSalute] = useState(null);
   const [errore, setErrore] = useState(null);
@@ -35,11 +40,29 @@ export default function App() {
   const [prefill, setPrefill] = useState(null);      // dati per il simulatore dalla gara
   const [apriNuova, setApriNuova] = useState(false);
 
+  // Se il backend rifiuta la password (scaduta, cambiata) si torna all'accesso.
   useEffect(() => {
-    api.health().then(setSalute).catch((e) => setErrore(e.message));
-    api.costanti().then(setCostanti).catch(() => {});
+    const suAccessoNegato = () => { setEntrato(false); setErrore(null); };
+    window.addEventListener("gare360:accesso-negato", suAccessoNegato);
+    return () => window.removeEventListener("gare360:accesso-negato", suAccessoNegato);
   }, []);
-  useEffect(() => { api.gare({ concluse: false }).then((r) => setElencoGare(r.gare)).catch(() => {}); }, [versione]);
+
+  // Primo contatto col backend: /api/health è sempre libera e dice anche se la
+  // password è accesa. Se è spenta si entra dritti.
+  useEffect(() => {
+    api.health()
+      .then((s) => { setSalute(s); if (!s.password_configurata) setEntrato(true); })
+      .catch((e) => setErrore(e.message));
+  }, []);
+
+  useEffect(() => {
+    if (!entrato) return;
+    api.costanti().then(setCostanti).catch(() => {});
+  }, [entrato]);
+  useEffect(() => {
+    if (!entrato) return;
+    api.gare({ concluse: false }).then((r) => setElencoGare(r.gare)).catch(() => {});
+  }, [versione, entrato]);
 
   const ricarica = useCallback(() => setVersione((v) => v + 1), []);
   const apriGara = useCallback((id) => { setGaraId(id); setSezione("home"); window.scrollTo({ top: 0 }); }, []);
@@ -71,6 +94,26 @@ export default function App() {
     impostazioni: <Impostazioni salute={salute} modello={modello} setModello={setModello} costanti={costanti} />,
   }[sezione];
 
+  if (!entrato) {
+    // Il backend non risponde: senza sapere se serve la password non si può
+    // procedere, quindi si spiega il problema invece di mostrare un form inutile.
+    if (errore && !salute) {
+      return (
+        <div className="accesso">
+          <div className="accesso-riquadro">
+            <h1>Gare360</h1>
+            <div className="avviso errore">
+              Il backend non risponde ({errore}). Controlla che il servizio su Render sia
+              acceso e che <code>VITE_API_URL</code> punti al suo indirizzo.
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (!salute) return <div className="accesso"><div className="accesso-riquadro"><h1>Gare360</h1><p className="nota">Connessione al backend…</p></div></div>;
+    return <Accesso onEntrato={() => setEntrato(true)} />;
+  }
+
   return (
     <div className="app">
       <header className="testata">
@@ -80,6 +123,9 @@ export default function App() {
         </div>
         <div className="stato">
           {errore ? <>Backend non raggiungibile</> : salute ? <>Backend attivo · assistente <b>{salute.chiave_api_configurata ? "pronto" : "senza chiave API"}</b></> : <>Connessione al backend…</>}
+          {salute?.password_configurata && (
+            <button className="btn esci" onClick={() => { auth.cancella(); setEntrato(false); }}>Esci</button>
+          )}
         </div>
       </header>
 

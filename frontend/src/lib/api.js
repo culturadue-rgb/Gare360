@@ -2,20 +2,59 @@
 // VITE_API_URL: URL del backend (Render). Vuoto in sviluppo => proxy di Vite su /api.
 const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
+// --- Password condivisa ----------------------------------------------------
+// Resta nella scheda del browser (sessionStorage): chiudendo la scheda va via,
+// e non viene mai scritta su disco. Viaggia a ogni richiesta nell'intestazione
+// X-App-Password.
+const CHIAVE = "gare360_password";
+
+export const auth = {
+  leggi: () => { try { return sessionStorage.getItem(CHIAVE) || ""; } catch { return ""; } },
+  salva: (pw) => { try { sessionStorage.setItem(CHIAVE, pw); } catch {} },
+  cancella: () => { try { sessionStorage.removeItem(CHIAVE); } catch {} },
+};
+
+// Quando il backend risponde "password sbagliata", l'app deve tornare alla
+// schermata di accesso: lo segnaliamo con un evento, così api.js resta
+// indipendente da React.
+function segnalaAccessoNegato() {
+  auth.cancella();
+  window.dispatchEvent(new CustomEvent("gare360:accesso-negato"));
+}
+
+function intestazioni(extra = {}) {
+  const pw = auth.leggi();
+  return { ...(pw ? { "X-App-Password": pw } : {}), ...extra };
+}
+
+async function leggiErrore(res) {
+  let msg = `${res.status} ${res.statusText}`;
+  try {
+    const j = await res.json();
+    msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
+  } catch {}
+  return msg;
+}
+
 async function call(path, options = {}) {
   const res = await fetch(BASE + path, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: intestazioni({ "Content-Type": "application/json", ...(options.headers || {}) }),
   });
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try {
-      const j = await res.json();
-      msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
-    } catch {}
+    const msg = await leggiErrore(res);
+    if (res.status === 401) segnalaAccessoNegato();
     throw new Error(msg);
   }
   return res.json();
+}
+
+// Verifica una password chiedendo una rotta protetta qualsiasi.
+export async function verificaPassword(pw) {
+  const res = await fetch(BASE + "/api/gare/costanti", { headers: { "X-App-Password": pw } });
+  if (res.status === 401) return { ok: false, messaggio: "Password non corretta." };
+  if (!res.ok) return { ok: false, messaggio: await leggiErrore(res) };
+  return { ok: true };
 }
 
 const json = (body) => JSON.stringify(body);
@@ -40,10 +79,11 @@ export const api = {
 
 // --- Gare in lavorazione, documenti, scadenze ------------------------------
 async function upload(path, formData) {
-  const res = await fetch(BASE + path, { method: "POST", body: formData });
+  // Nessun Content-Type: lo imposta il browser con il confine del multipart.
+  const res = await fetch(BASE + path, { method: "POST", body: formData, headers: intestazioni() });
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
-    try { const j = await res.json(); msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j); } catch {}
+    const msg = await leggiErrore(res);
+    if (res.status === 401) segnalaAccessoNegato();
     throw new Error(msg);
   }
   return res.json();

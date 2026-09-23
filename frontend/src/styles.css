@@ -236,3 +236,34 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .compatto .griglia-edit th, .compatto .griglia-edit td { padding: .2rem .15rem; font-size: .85rem; }
 .compatto .griglia-edit input, .compatto .griglia-edit select { padding: .25rem .3rem; font-size: .85rem; }
 .compatto .griglia-edit td:first-child { min-width: 100px; }
+
+/* --- Schermata di accesso ------------------------------------------------ */
+.accesso {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--blu-tenue);
+}
+.accesso-riquadro {
+  width: min(24rem, 100%);
+  background: var(--bianco);
+  border: 1px solid var(--linea);
+  border-top: 5px solid var(--lime);
+  border-radius: var(--raggio);
+  padding: 1.6rem 1.5rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: .9rem;
+}
+.accesso-riquadro h1 { margin: 0; color: var(--blu); font-size: 1.6rem; }
+.accesso-riquadro .campo { display: flex; flex-direction: column; gap: .3rem; }
+.accesso-riquadro input {
+  padding: .6rem .7rem;
+  border: 1px solid var(--linea);
+  border-radius: var(--raggio);
+  font: inherit;
+}
+.accesso-riquadro input:focus { outline: 2px solid var(--lime); border-color: var(--lime); }
+.nota.piccola { font-size: .8rem; color: var(--grigio); margin: 0; }
+.btn.esci { margin-left: .8rem; padding: .25rem .7rem; font-size: .85rem; }
