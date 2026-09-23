@@ -394,3 +394,13 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
   font-size: .78rem; padding: .1rem .3rem; border: 1px solid var(--linea);
   border-radius: 6px; background: var(--bianco); color: var(--inchiostro);
 }
+
+/* --- Consultazione CCNL --------------------------------------------------- */
+.risposta-ccnl { margin-top: .8rem; }
+.risposta-ccnl .md { white-space: pre-wrap; line-height: 1.55; }
+.passaggio { margin: .6rem 0; }
+.passaggio blockquote {
+  margin: .2rem 0 0; padding: .5rem .7rem; background: var(--blu-tenue);
+  border-left: 3px solid var(--blu); border-radius: 0 var(--raggio) var(--raggio) 0;
+  font-size: .85rem; white-space: pre-wrap; max-height: 14rem; overflow-y: auto;
+}

@@ -1,24 +1,185 @@
 # Gare360
 
-Dashboard operativa per la gestione e valutazione delle gare d'appalto (settori Cultura e Sociale): assistente AI al centro che lavora sui documenti di ogni gara, gare in lavorazione con stati e urgenze, scadenze per settore con calendario mensile e inserimento da PDF, simulatore deterministico del punteggio collegato alla gara, tracker delle rese, archivio storico.
+Strumento per decidere sulle gare d'appalto dei settori Cultura, Sociale e Servizi
+educativi: raccoglie la scheda di rilevazione, tiene il calendario delle scadenze, simula il
+punteggio sui dati delle gare già fatte e archivia ogni gara conclusa per rendere più
+precisa la prossima.
 
-## Come si usa
+---
 
-1. **Nuova gara** (pulsante a sinistra, o trascinando il PDF del bando nel riquadro scadenze: i dati vengono estratti e proposti per la conferma).
-2. Nella scheda della gara (al centro) **carichi i documenti** — bando, disciplinare, capitolato, allegati, chiarimenti — che entrano subito nel contesto dell'assistente.
-3. Chiedi all'assistente, oppure usa i pulsanti **Valuta la gara (GO / NO GO)**, **Estrai requisiti e scadenze**, **Prepara il simulatore** (estrae criteri, punteggi e formula prezzo e li carica nel simulatore a destra).
-4. Cambi lo **stato** (Da valutare → In analisi → GO / NO GO → In preparazione → Presentata → Archiviata) dalla scheda.
-5. La gara resta tra le **Gare in lavorazione** con la sua memoria (documenti, analisi, conversazione) per 15 giorni dall'ultima attività; dopo, la memoria viene archiviata e puoi riattivarla con un click.
+## Come funziona, in breve
 
-I dati delle gare stanno in `DATA_DIR/gare/<id>/` (JSON + documenti + testi estratti), sullo stesso disco già usato da archivio e tracker.
+Una gara attraversa quattro passi, e il menu a sinistra segue lo stesso ordine:
+
+```
+Da decidere  →  In lavorazione  →  Conclusa  →  Archiviata
+```
+
+1. **Da decidere** — si compila la *scheda di rilevazione* (a mano, oppure caricando bando o
+   disciplinare e lasciando che l'AI proponga i campi, che poi si correggono).
+2. **In lavorazione** — le date della scheda entrano nel calendario da sole. Si caricano i
+   documenti, si chiede all'assistente, si simula il punteggio.
+3. **Conclusa** — l'offerta è stata presentata.
+4. **Archiviata** — si compila il modulo delle 34 colonne e la gara entra nell'archivio
+   storico, diventando parte della memoria su cui il simulatore ragionerà dopo.
+
+L'ultimo passo è quello che conta: **il simulatore è preciso quanto è pieno l'archivio.**
+
+---
+
+## Dove stanno i dati
+
+| Cosa | Dove |
+|---|---|
+| Archivio storico (34 colonne × 3 archivi) | file Excel, caricato dall'app |
+| Gare in lavorazione, documenti, analisi | `DATA_DIR/gare/<id>/` |
+| Calendario | `DATA_DIR/calendario.json` |
+| Documenti CCNL e testo estratto | `DATA_DIR/ccnl/` |
+
+> ⚠️ **Sul piano gratuito di Render il disco si svuota a ogni riavvio.**
+> Finché i dati non stanno su Google Drive, l'unica copia che sopravvive con certezza è
+> quella che scarichi da **Impostazioni → Esporta gli archivi in Excel**. Scaricala spesso.
+
+### Passare a Google Drive
+
+Il codice è già pronto (`backend/drive.py` e `archivio.FonteDrive`). Per accenderlo servono
+tre variabili d'ambiente su Render — `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+`GOOGLE_REFRESH_TOKEN` — più `GARE360_ARCHIVIO_ID` con l'id del foglio. Da quel momento
+l'app legge e scrive lì, e le correzioni fatte a mano nel foglio si vedono nell'app.
+
+**Rinnovare l'accesso a Google.** Se l'app dice *«accesso a Google scaduto, rinnovalo»*, il
+refresh token non vale più: è stato revocato, la password dell'account è cambiata, oppure la
+schermata di consenso su Google Cloud è rimasta in stato "Test" invece che "In produzione"
+(in quel caso scade ogni 7 giorni). Si rifà così:
+
+1. **console.cloud.google.com** → progetto Gare360 → *API e servizi* → *Schermata consenso
+   OAuth*: deve risultare **In produzione**. Se non lo è, premi **Pubblica app**.
+2. **developers.google.com/oauthplayground** → ingranaggio ⚙ → *Use your own OAuth
+   credentials* → incolla ID client e secret → *Access type*: **Offline**.
+3. Nella casella *Input your own scopes* incolla:
+   `https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets`
+4. *Authorize APIs* → autorizza (la schermata "app non verificata" è normale: l'app è la
+   tua) → *Exchange authorization code for tokens*.
+5. Copia il **Refresh token** e sostituisci `GOOGLE_REFRESH_TOKEN` su Render.
+
+---
+
+## Variabili d'ambiente
+
+### Su Render (backend)
+
+| Nome | Serve? | A cosa |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | per l'AI | assistente, estrazione della scheda, analisi strategica, consultazione CCNL |
+| `ALLOWED_ORIGINS` | sì | i siti autorizzati a parlare col backend: `https://gare360-ynfu.vercel.app` |
+| `DATA_DIR` | sì | dove l'app scrive, es. `/var/data` |
+| `STRATEGA_MODEL` | no | modello di default |
+| `APP_PASSWORD` | no | **spenta**: impostandola, l'app chiede la password all'ingresso |
+| `MOSTRA_DOCS` | no | lasciare `0`: a `1` pubblica l'elenco dei comandi dell'API |
+| `ANTEPRIME_VERCEL` | no | lasciare `0`: a `1` riammette qualsiasi indirizzo `*.vercel.app` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REFRESH_TOKEN` | no | collegamento a Drive |
+| `GARE360_ARCHIVIO_ID` | no | id del foglio Google dell'archivio |
+
+### Su Vercel (frontend)
+
+| Nome | A cosa serve |
+|---|---|
+| `VITE_API_URL` | indirizzo del backend su Render, **senza barra finale** |
+
+---
+
+## Sicurezza
+
+L'app è **aperta**: chiunque conosca l'indirizzo del backend può leggerla e modificarla. È
+una scelta, per non mettere attriti all'uso quotidiano. Tre cose la rendono accettabile:
+
+- il repository va tenuto **privato**, così l'indirizzo non gira;
+- `/docs` è spento, quindi l'elenco dei comandi non è consultabile;
+- solo il dominio del frontend può parlare col backend.
+
+Per accendere la protezione basta aggiungere `APP_PASSWORD` su Render: il frontend se ne
+accorge da solo e mostra la schermata di accesso. Nessun'altra modifica.
+
+---
+
+## Le tre regole che il codice rispetta ovunque
+
+**1. Ogni dato estratto in automatico è correggibile a mano**, prima e dopo il salvataggio.
+Quello che l'AI non trova resta vuoto: non viene indovinato.
+
+**2. Ogni scheda si può cancellare**, sempre con una conferma esplicita.
+
+**3. I numeri li calcola il codice, non l'AI.** Il simulatore è deterministico: stessi
+ingressi, stesso risultato. L'AI commenta quei numeri, non li rifà. Se la formula del
+disciplinare non è fra quelle calcolabili, il simulatore lo dice e mostra il testo
+originale invece di approssimare — perché un punteggio economico sbagliato porta a
+consigliare il ribasso sbagliato.
+
+Lo stesso vale per la consultazione dei CCNL: si risponde solo con i passaggi trovati nei
+documenti caricati, con documento e pagina, e **il codice verifica** che ogni citazione
+corrisponda davvero a un passaggio fornito. Le citazioni inventate vengono marcate.
+
+---
+
+## Struttura
 
 ```
 gare360/
-├── backend/     FastAPI (Python) — API per simulatore, tracker, archivio, assistente
-├── frontend/    React + Vite — interfaccia
-├── render.yaml  deploy del backend su Render
+├── backend/               FastAPI
+│   ├── main.py            le rotte
+│   ├── scheda.py          i 41 campi della scheda di rilevazione (fonte unica)
+│   ├── gare.py            le gare in lavorazione, i quattro stati, le analisi salvate
+│   ├── calendario.py      le scadenze
+│   ├── archivio.py        i tre archivi storici, 34 colonne, Excel o Drive
+│   ├── storico.py         le stime per il simulatore, ricavate dagli archivi
+│   ├── simulator.py       il calcolo del punteggio (deterministico)
+│   ├── ccnl.py            i contratti collettivi e la ricerca con citazioni
+│   ├── drive.py           Google Drive e Fogli (pronto, non ancora attivo)
+│   ├── chatbot.py         le chiamate al modello
+│   └── prompts/           le istruzioni dell'assistente
+├── frontend/              React + Vite
+│   └── src/components/    un componente per sezione
+├── render.yaml            deploy del backend
 └── README.md
 ```
+
+---
+
+## API principali
+
+| Metodo | Percorso | Cosa fa |
+|---|---|---|
+| GET | `/api/health` | stato del backend, della chiave AI, di Drive, della password |
+| GET | `/api/scheda/campi` | definizione del modulo della scheda |
+| POST | `/api/scheda/estrai` | legge un PDF e **propone** i campi, senza salvare |
+| GET/POST | `/api/gare` | elenco (filtri `stato`, `settore`) e creazione |
+| GET/PATCH/DELETE | `/api/gare/{id}` | scheda, aggiornamento, eliminazione |
+| POST | `/api/gare/{id}/archivia` | scrive la riga in archivio e **poi** archivia la gara |
+| GET | `/api/calendario` | voci del mese o dei prossimi giorni |
+| POST/PATCH/DELETE | `/api/calendario[/{id}]` | aggiunta, modifica, cancellazione |
+| GET | `/api/storico/stime` | resa tecnica, scarto, ribassi, concorrenti, con affidabilità |
+| POST | `/api/simula/scenari` | più scenari affiancati (nessuna AI) |
+| POST | `/api/gare/{id}/analisi` | analisi strategica (AI), salvata nella gara |
+| GET | `/api/archivi/{nome}` | righe di un archivio, con ricerca e filtri |
+| POST | `/api/archivi-importa` · GET `/api/archivi-esporta` | carica e scarica l'Excel |
+| POST | `/api/ccnl/{contratto}/documenti` | carica un PDF e ne estrae il testo per pagina |
+| POST | `/api/ccnl/chiedi` | consultazione con citazioni verificate |
+
+---
+
+## Formule di prezzo riconosciute dal simulatore
+
+- **Lineare / proporzionale**: P = Pmax × R / Rmax
+- **Bilineare** (X = 0,80 / 0,85 / 0,90): soglia = X × media dei ribassi; sotto soglia
+  proporzionale, sopra interpolazione fino a Pmax.
+
+Ogni altra formula **non viene approssimata**: il simulatore lo segnala e mostra il testo
+del disciplinare. Per aggiungerne una, `backend/simulator.py`, funzione
+`punteggio_economico`.
+
+Sono gestite anche le gare a **sola offerta tecnica** (punti prezzo = 0).
+
+---
 
 ## Sviluppo locale
 
@@ -26,72 +187,14 @@ gare360/
 # backend (porta 8000)
 cd backend
 pip install -r requirements.txt
-cp .env.example .env            # inserisci ANTHROPIC_API_KEY (serve solo all'assistente)
+cp env.example .env          # inserisci ANTHROPIC_API_KEY
 export $(grep -v '^#' .env | xargs)
 uvicorn main:app --reload
 
-# frontend (porta 5173, con proxy /api -> localhost:8000)
+# frontend (porta 5173, con proxy /api verso localhost:8000)
 cd frontend
 npm install
 npm run dev
 ```
 
-## Deploy
-
-**Backend su Render** — importa il repo come Blueprint: `render.yaml` viene letto in automatico. Il servizio si chiama ancora `alloro-api` nel file: è solo l'identificativo interno di Render e cambiarlo creerebbe un nuovo servizio con un nuovo URL. Nella dashboard imposta:
-- `ANTHROPIC_API_KEY` — la chiave; non va mai nel repo
-- `ALLOWED_ORIGINS` — l'URL del frontend su Vercel, es. `https://gare360.vercel.app`
-
-Il file monta un Disk da 1 GB su `/var/data` (`DATA_DIR`), così archivio e tracker sopravvivono ai redeploy. Al primo avvio `seed_data.py` copia i file iniziali se il disco è vuoto. Senza disco, i dati tornano allo stato del repo ad ogni deploy.
-
-**Frontend su Vercel** — importa il repo con *Root Directory* = `frontend` (`vercel.json` fa il resto). Variabile d'ambiente:
-- `VITE_API_URL` — l'URL del backend su Render, es. `https://alloro-api.onrender.com`
-
-Le anteprime `*.vercel.app` sono ammesse dal CORS del backend per default (`ALLOW_VERCEL_PREVIEWS=1`); metti `0` per limitarti a `ALLOWED_ORIGINS`.
-
-## API
-
-| Metodo | Percorso | Cosa fa |
-|---|---|---|
-| GET | `/api/health` | stato, se la chiave API è configurata, modello di default |
-| POST | `/api/simula` | `{config, ribasso_nostro, concorrenti}` → graduatoria, sensibilità, dettaglio criteri |
-| GET / PUT | `/api/tracker` | righe del tracker (`criterio, tipo, resa, n, note`) |
-| GET / PUT | `/api/tracker/raw` | il CSV come testo |
-| GET | `/api/archivio` | schede parse + testo markdown |
-| PUT | `/api/archivio/raw` | salva il markdown intero |
-| POST | `/api/archivio/schede` | aggiunge una scheda |
-| GET / PUT | `/api/prompt` | prompt di sistema dell'assistente |
-| GET / POST | `/api/gare` | elenco (filtri `settore`, `stato`, `concluse`) / crea gara |
-| GET / PATCH / DELETE | `/api/gare/{id}` | scheda gara, aggiornamento (stato, settore, scadenza…), eliminazione |
-| POST | `/api/gare/{id}/documenti` | upload (multipart `file`, `categoria`); testo estratto da PDF/DOCX/TXT |
-| DELETE | `/api/gare/{id}/documenti/{doc}` | rimuove un documento |
-| POST | `/api/gare/{id}/chat` | domanda all'assistente con tutti i documenti e la memoria della gara |
-| POST | `/api/gare/{id}/valuta` | valutazione GO/NO GO secondo la metodologia (tracker + archivio) |
-| POST | `/api/gare/{id}/estrai-info` | requisiti, criticità, scadenze in JSON |
-| POST | `/api/gare/{id}/estrai-simulatore` | criteri, punteggi, formula per il simulatore |
-| POST | `/api/gare/{id}/memoria/riattiva` | riattiva la memoria dopo i 15 giorni |
-| GET | `/api/documenti` | tutti i documenti di tutte le gare |
-| GET | `/api/scadenze` | `?giorni=7` oppure `?mese=YYYY-MM`, divise per settore |
-| POST | `/api/scadenze/estrai` | legge un PDF e propone titolo, ente, data/ora, settore (senza salvare) |
-| POST | `/api/scadenze/conferma` | crea la gara con i dati confermati |
-| POST | `/api/chat` | `{messaggi, includi_contesto, modello}` → risposta |
-
-Documentazione interattiva su `/docs` a backend avviato.
-
-## Variabili d'ambiente
-
-| Dove | Nome | Note |
-|---|---|---|
-| backend | `ANTHROPIC_API_KEY` | obbligatoria solo per l'assistente |
-| backend | `STRATEGA_MODEL` | modello di default (opzionale) |
-| backend | `ALLOWED_ORIGINS` | origini CORS, separate da virgola |
-| backend | `DATA_DIR`, `PROMPTS_DIR` | cartelle dati/prompt (default `./data`, `./prompts`) |
-| frontend | `VITE_API_URL` | URL del backend; vuoto in sviluppo |
-
-Nessuna chiave è scritta nel codice: l'assistente legge `ANTHROPIC_API_KEY` esclusivamente dall'ambiente del server e il frontend non la vede mai.
-
-## Formule prezzo del simulatore
-- **Lineare / proporzionale**: P = Pmax × R / Rmax
-- **Bilineare** (a due rette, X = 0,80 / 0,85 / 0,90): soglia = X × media ribassi; sotto soglia proporzionale, sopra interpolazione fino a Pmax.
-
-Altre formule: aggiungile in `backend/simulator.py`, funzione `punteggio_economico`.
+In sviluppo lascia `VITE_API_URL` vuoto: Vite gira le richieste al backend locale.

@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 import archive
 import archivio as arch
 import calendario as cal
+import ccnl as mod_ccnl
 import chatbot
 import drive
 import scheda as mod_scheda
@@ -619,6 +620,86 @@ async def api_archivi_importa(file: UploadFile = File(...)):
     except arch.ErroreArchivio as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True, "gare_per_archivio": conteggi}
+
+
+# --- Archivio CCNL ----------------------------------------------------------
+
+@app.get("/api/ccnl")
+def api_ccnl_elenco(contratto: Optional[str] = None):
+    return {"contratti": mod_ccnl.CONTRATTI, "tipi_documento": mod_ccnl.TIPI_DOCUMENTO,
+            "documenti": mod_ccnl.elenco(contratto)}
+
+
+@app.post("/api/ccnl/{contratto}/documenti")
+async def api_ccnl_carica(contratto: str, file: UploadFile = File(...),
+                          tipo_documento: str = Form("altro"),
+                          data_sottoscrizione: str = Form(""),
+                          validita_da: str = Form(""), validita_a: str = Form("")):
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        return mod_ccnl.aggiungi_documento(contratto, file.filename or "documento.pdf", dati, {
+            "tipo_documento": tipo_documento, "data_sottoscrizione": data_sottoscrizione,
+            "validita_da": validita_da, "validita_a": validita_a})
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.patch("/api/ccnl/documenti/{id_doc}")
+def api_ccnl_aggiorna(id_doc: str, campi: dict = Body(...)):
+    try:
+        return mod_ccnl.aggiorna_documento(id_doc, campi)
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.delete("/api/ccnl/documenti/{id_doc}")
+def api_ccnl_elimina(id_doc: str):
+    try:
+        mod_ccnl.elimina_documento(id_doc)
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
+class DomandaCCNL(BaseModel):
+    domanda: str
+    contratto: Optional[str] = None
+    modello: Optional[str] = None
+
+
+@app.post("/api/ccnl/chiedi")
+def api_ccnl_chiedi(body: DomandaCCNL):
+    """
+    Consultazione sui soli documenti caricati.
+
+    Prima si cercano i passaggi pertinenti nel testo indicizzato, poi si chiama
+    il modello con QUEI passaggi soltanto e temperatura 0. Infine il codice
+    verifica che ogni citazione corrisponda davvero a un passaggio fornito: le
+    citazioni inventate vengono marcate e segnalate.
+    """
+    if not body.domanda.strip():
+        raise HTTPException(400, "Scrivi una domanda.")
+
+    passaggi = mod_ccnl.cerca_passaggi(body.domanda, body.contratto)
+    if not passaggi:
+        return {"risposta": "Non presente nei documenti caricati.", "passaggi": [],
+                "problemi": [], "nessun_passaggio": True}
+
+    if not chatbot.chiave_configurata():
+        raise HTTPException(503, "L'assistente non e' configurato: manca ANTHROPIC_API_KEY.")
+
+    system = mod_ccnl.istruzioni(passaggi)
+    try:
+        risposta = chatbot.chiama(system, [{"role": "user", "content": body.domanda}],
+                                  body.modello, max_tokens=2000, temperatura=0)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Consultazione non riuscita: {e}") from e
+
+    risposta, problemi = mod_ccnl.verifica_citazioni(risposta, passaggi)
+    return {"risposta": risposta, "passaggi": passaggi, "problemi": problemi,
+            "nessun_passaggio": False}
 
 
 # --- Archiviazione di una gara ---------------------------------------------

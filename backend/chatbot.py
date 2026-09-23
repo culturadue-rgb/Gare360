@@ -67,7 +67,8 @@ def rispondi(messaggi: list[dict], system: str, modello: str | None = None) -> s
 # Funzioni generiche usate dalle gare in lavorazione
 # ---------------------------------------------------------------------------
 
-def chiama(system: str, messaggi: list[dict], modello: str | None = None, max_tokens: int = 3000) -> str:
+def chiama(system: str, messaggi: list[dict], modello: str | None = None,
+           max_tokens: int = 3000, temperatura: float | None = None) -> str:
     """Chiamata generica al modello. Solleva se manca la chiave o la chiamata fallisce."""
     import anthropic
 
@@ -75,8 +76,9 @@ def chiama(system: str, messaggi: list[dict], modello: str | None = None, max_to
     if not key:
         raise RuntimeError("Nessuna chiave API configurata sul server (ANTHROPIC_API_KEY).")
     client = anthropic.Anthropic(api_key=key)
+    extra = {} if temperatura is None else {"temperature": temperatura}
     resp = client.messages.create(model=modello or MODELLO_DEFAULT, max_tokens=max_tokens,
-                                  system=system, messages=messaggi)
+                                  system=system, messages=messaggi, **extra)
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
 
 

@@ -122,6 +122,17 @@ Object.assign(api, {
   estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
   controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
 
+  // --- Archivio CCNL ---
+  ccnl: (contratto) => call("/api/ccnl" + qs(contratto ? { contratto } : {})),
+  caricaCCNL: (contratto, file, meta) => {
+    const f = new FormData(); f.append("file", file);
+    Object.entries(meta || {}).forEach(([k, v]) => f.append(k, v ?? ""));
+    return upload(`/api/ccnl/${encodeURIComponent(contratto)}/documenti`, f);
+  },
+  aggiornaCCNL: (id, campi) => call(`/api/ccnl/documenti/${id}`, { method: "PATCH", body: json(campi) }),
+  eliminaCCNL: (id) => call(`/api/ccnl/documenti/${id}`, { method: "DELETE" }),
+  chiediCCNL: (corpo) => call("/api/ccnl/chiedi", { method: "POST", body: json(corpo) }),
+
   // --- Archiviazione di una gara ---
   precompilaArchivio: (gid) => call(`/api/gare/${gid}/precompila-archivio`),
   archiviaGara: (gid, corpo) => call(`/api/gare/${gid}/archivia`, { method: "POST", body: json(corpo) }),

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, auth } from "./lib/api.js";
 import Accesso from "./components/Accesso.jsx";
 import SchedaGara from "./components/SchedaGara.jsx";
+import CCNL from "./components/CCNL.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
 import Calendario from "./components/Calendario.jsx";
@@ -89,14 +90,7 @@ export default function App() {
       stati={costanti?.stati} onCambiata={ricarica}
     />
   ) : voce?.archivio === "CCNL" ? (
-    <div className="riquadro">
-      <h2>Archivio CCNL</h2>
-      <p className="nota">
-        Qui andranno i contratti collettivi (Multiservizi, Cooperative sociali,
-        Federculture) con la ricerca che cita documento e pagina. Non è ancora
-        attivo.
-      </p>
-    </div>
+    <CCNL />
   ) : voce?.archivio ? (
     <Archivio archivio={voce.archivio} />
   ) : sezione === "impostazioni" ? (
