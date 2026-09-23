@@ -390,3 +390,7 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .affidabilita-bassa, .affidabilita-molto-bassa { color: var(--rosso); }
 .modale.largo { max-width: 52rem; max-height: 85vh; overflow-y: auto; }
 .modale.largo .md { white-space: pre-wrap; line-height: 1.55; }
+.cambio-stato {
+  font-size: .78rem; padding: .1rem .3rem; border: 1px solid var(--linea);
+  border-radius: 6px; background: var(--bianco); color: var(--inchiostro);
+}

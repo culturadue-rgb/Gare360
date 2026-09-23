@@ -86,6 +86,7 @@ export default function App() {
     <GareInLavorazione
       stato={voce.stato} titolo={voce.label} garaCorrente={garaId}
       onApri={apriGara} versione={versione}
+      stati={costanti?.stati} onCambiata={ricarica}
     />
   ) : voce?.archivio === "CCNL" ? (
     <div className="riquadro">

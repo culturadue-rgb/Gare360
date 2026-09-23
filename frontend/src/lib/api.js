@@ -122,6 +122,10 @@ Object.assign(api, {
   estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
   controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
 
+  // --- Archiviazione di una gara ---
+  precompilaArchivio: (gid) => call(`/api/gare/${gid}/precompila-archivio`),
+  archiviaGara: (gid, corpo) => call(`/api/gare/${gid}/archivia`, { method: "POST", body: json(corpo) }),
+
   // --- Simulatore e storico ---
   stimeStoriche: (p = {}) => call("/api/storico/stime" + qs(p)),
   profiliConcorrenti: (p = {}) => call("/api/storico/concorrenti" + qs(p)),

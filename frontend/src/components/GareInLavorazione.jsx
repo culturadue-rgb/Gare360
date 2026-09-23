@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api.js";
 import { classeSettore, fmtDataOra, giorniLabel } from "../lib/util.js";
+import CambioStato from "./CambioStato.jsx";
 
 // Un colore per ogni passo del flusso, così lo stato si riconosce a colpo d'occhio.
 const classeStato = (s) => ({
@@ -10,7 +11,7 @@ const classeStato = (s) => ({
   "Archiviata": "archiviata",
 }[s] || "");
 
-export function CardGara({ g, attiva, onApri }) {
+export function CardGara({ g, attiva, onApri, stati, onCambiata }) {
   return (
     <div className={`card-gara ${attiva ? "attiva" : ""}`} role="button" tabIndex={0} onClick={() => onApri(g.id)} onKeyDown={(e) => e.key === "Enter" && onApri(g.id)}>
       <div>
@@ -18,7 +19,8 @@ export function CardGara({ g, attiva, onApri }) {
         <div className="meta">
           <span className={`settore ${classeSettore(g.settore)}`}>{g.settore}</span>
           <span>{g.ente || "ente n.d."}</span>
-          <span className={`stato ${classeStato(g.stato)}`}>{g.stato}</span>
+          {stati ? <CambioStato gara={g} stati={stati} onCambiata={onCambiata} />
+                 : <span className={`stato ${classeStato(g.stato)}`}>{g.stato}</span>}
           {g.n_documenti > 0 && <span>{g.n_documenti} doc.</span>}
           {!g.memoria_attiva && <span title="Memoria archiviata (più di 15 giorni senza attività)">memoria archiviata</span>}
         </div>
@@ -32,7 +34,7 @@ export function CardGara({ g, attiva, onApri }) {
   );
 }
 
-export default function GareInLavorazione({ stato, garaCorrente, onApri, versione, titolo, limite }) {
+export default function GareInLavorazione({ stato, garaCorrente, onApri, versione, titolo, limite, stati, onCambiata }) {
   const [gare, setGare] = useState([]);
   const [filtro, setFiltro] = useState("");
   const [errore, setErrore] = useState(null);
@@ -62,7 +64,7 @@ export default function GareInLavorazione({ stato, garaCorrente, onApri, version
                  : "Nessuna gara aperta. Creane una dal pulsante «+ Nuova gara»."}
         </div>
       )}
-      {mostrate.map((g) => <CardGara key={g.id} g={g} attiva={g.id === garaCorrente} onApri={onApri} />)}
+      {mostrate.map((g) => <CardGara key={g.id} g={g} attiva={g.id === garaCorrente} onApri={onApri} stati={stati} onCambiata={onCambiata} />)}
       {limite && gare.length > limite && <p className="nota">Altre {gare.length - limite} gare nelle sezioni del menu.</p>}
     </div>
   );

@@ -621,6 +621,94 @@ async def api_archivi_importa(file: UploadFile = File(...)):
     return {"ok": True, "gare_per_archivio": conteggi}
 
 
+# --- Archiviazione di una gara ---------------------------------------------
+# Passare una gara ad "Archiviata" non e' un cambio di stato qualsiasi: significa
+# aggiungerla all'archivio storico, cioe' alla memoria su cui il simulatore
+# ragionera' per tutte le gare future. Per questo si apre un modulo con tutte e
+# 34 le colonne, precompilato con quello che gia' si sa, e si archivia solo dopo
+# conferma.
+
+def _id_archivio(g: dict) -> str:
+    """Un codice breve a partire dal titolo, da correggere se non piace."""
+    import re as _re
+    parole = _re.findall(r"[A-Za-zÀ-ÿ]{3,}", g.get("titolo", "") or "gara")
+    sigla = "".join(p[:3].upper() for p in parole[:2]) or "GARA"
+    anno = (g.get("creata") or "")[:4] or ""
+    return f"{sigla}{anno[-2:]}"
+
+
+@app.get("/api/gare/{gid}/precompila-archivio")
+def api_gara_precompila(gid: str):
+    """
+    Il modulo di archiviazione, gia' riempito con quello che l'app sa.
+    I campi che solo una persona puo' sapere (esito, punteggi, concorrenti,
+    ore di lavoro) restano vuoti: sono proprio quelli che rendono utile
+    l'archivio, e inventarli lo renderebbe dannoso.
+    """
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+    sched = g.get("scheda") or {}
+    crit = g.get("criteri") or {}
+    riga = {c: "" for c in arch.COLONNE}
+    riga.update({
+        "id_gara": _id_archivio(g),
+        "cig": sched.get("cig", ""),
+        "stazione_appaltante": g.get("ente", "") or sched.get("ente", ""),
+        "titolo_gara": sched.get("servizio", "") or g.get("titolo", ""),
+        "settore": g.get("settore", ""),
+        "scadenza_gara": sched.get("scadenza_offerte", ""),
+        "stato_gara": "Chiusa",
+        "note": sched.get("note", ""),
+        "base_asta": sched.get("base_asta", "") or (g.get("base_asta") or ""),
+        "max_punteggio_tecnico": crit.get("peso_tecnico", ""),
+        "max_punteggio_economico": crit.get("peso_economico", ""),
+        "data_segnalazione": sched.get("data_segnalazione", ""),
+        "uscente": sched.get("siamo_uscenti", ""),
+        "origine_dato": "Form app",
+    })
+
+    return {
+        "riga": riga,
+        "colonne": arch.COLONNE,
+        "archivio_proposto": _archivio_per_settore(g.get("settore", "")),
+        "archivi": arch.ARCHIVI,
+        "esiti": arch.ESITI,
+        "stati_gara": arch.STATI_GARA,
+        "da_completare": ["esito_gara", "punteggio_tecnico", "punteggio_economico",
+                          "punteggio_tecnico_aggiudicatario", "punteggio_economico_aggiudicatario",
+                          "n_concorrenti", "importo_offerto", "ore_lavoro", "regione", "comune"],
+    }
+
+
+class ArchiviaIn(BaseModel):
+    archivio: str
+    riga: dict
+
+
+@app.post("/api/gare/{gid}/archivia")
+def api_gara_archivia(gid: str, body: ArchiviaIn):
+    """Aggiunge la riga all'archivio scelto e solo allora porta la gara ad Archiviata."""
+    try:
+        gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if body.archivio not in arch.ARCHIVI:
+        raise HTTPException(400, f"Archivio «{body.archivio}» inesistente.")
+
+    try:
+        riga = arch.aggiungi(body.archivio, body.riga)
+    except arch.ErroreArchivio as e:
+        # Non si cambia stato se la riga non e' stata scritta: meglio una gara
+        # ancora "Conclusa" che una "Archiviata" senza riga in archivio.
+        raise HTTPException(400, str(e)) from e
+
+    g = gare.aggiorna(gid, {"stato": "Archiviata"})
+    return {"gara": g, "riga": riga, "archivio": body.archivio}
+
+
 # --- Storico e simulatore --------------------------------------------------
 
 @app.get("/api/storico/stime")
