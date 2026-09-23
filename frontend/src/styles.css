@@ -404,3 +404,10 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
   border-left: 3px solid var(--blu); border-radius: 0 var(--raggio) var(--raggio) 0;
   font-size: .85rem; white-space: pre-wrap; max-height: 14rem; overflow-y: auto;
 }
+
+/* --- Ponte manuale: preparare il testo, incollare la risposta --------------
+   Riquadro riconoscibile ma discreto: è una strada alternativa, non un errore. */
+.ponte { border: 1px dashed var(--linea); border-radius: 10px; padding: .8rem 1rem; margin: .8rem 0; background: #fbfbfa; }
+.ponte h4 { margin: 0 0 .3rem; font-size: .95rem; }
+.ponte textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; }
+.ponte-testo { background: #f4f4f2; color: #444; }

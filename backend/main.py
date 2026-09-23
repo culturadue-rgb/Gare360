@@ -28,6 +28,7 @@ import calendario as cal
 import ccnl as mod_ccnl
 import chatbot
 import drive
+import manuale
 import scheda as mod_scheda
 import storico
 from simulator import ConfigGara, Concorrente, Criterio, simula
@@ -856,6 +857,31 @@ class AnalisiIn(BaseModel):
     modello: Optional[str] = None
 
 
+def _system_analisi(g: dict, body) -> tuple[str, str]:
+    """
+    Il prompt dell'analisi: prompt di sistema, scheda, criteri, numeri del
+    simulatore, storico e precedenti.
+
+    E' una funzione a parte perche' lo stesso testo serve due volte: per la
+    chiamata via API e per il testo da incollare a mano su claude.ai. Costruirlo
+    in due posti vorrebbe dire ritrovarsi, prima o poi, con due analisi diverse
+    a parita' di gara.
+    """
+    archivio_nome = body.archivio or _archivio_per_settore(g.get("settore", ""))
+    dati = {
+        "scheda": g.get("scheda", {}),
+        "criteri": g.get("criteri", {}),
+        "risultati_simulatore": body.risultati,
+        "stime_storiche": storico.stime(archivio_nome),
+        "gare_simili": storico.gare_simili(
+            archivio_nome,
+            testo=g.get("titolo", "") + " " + (g.get("scheda", {}).get("servizio") or ""),
+            regione=(g.get("scheda", {}) or {}).get("regione", "")),
+        "profili_concorrenti": storico.profili_concorrenti(archivio_nome),
+    }
+    return archivio_nome, chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), dati)
+
+
 @app.post("/api/gare/{gid}/analisi")
 def api_gara_analisi(gid: str, body: AnalisiIn):
     """
@@ -869,19 +895,7 @@ def api_gara_analisi(gid: str, body: AnalisiIn):
     if not chatbot.chiave_configurata():
         raise HTTPException(503, "L'assistente non è configurato: manca ANTHROPIC_API_KEY.")
 
-    archivio_nome = body.archivio or _archivio_per_settore(g.get("settore", ""))
-    dati = {
-        "scheda": g.get("scheda", {}),
-        "criteri": g.get("criteri", {}),
-        "risultati_simulatore": body.risultati,
-        "stime_storiche": storico.stime(archivio_nome),
-        "gare_simili": storico.gare_simili(
-            archivio_nome,
-            testo=g.get("titolo", "") + " " + (g.get("scheda", {}).get("servizio") or ""),
-            regione=(g.get("scheda", {}) or {}).get("regione", "")),
-        "profili_concorrenti": storico.profili_concorrenti(archivio_nome),
-    }
-    system = chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), dati)
+    archivio_nome, system = _system_analisi(g, body)
     try:
         testo = chatbot.chiama(system, [{"role": "user", "content": chatbot.ISTRUZIONI_ANALISI}],
                                body.modello, max_tokens=8000, ragiona=True)
@@ -892,6 +906,114 @@ def api_gara_analisi(gid: str, body: AnalisiIn):
                                            "scenari": len(body.risultati.get("scenari", []))})
     gare.tocca(g)
     return voce
+
+
+# ---------------------------------------------------------------------------
+# Il ponte manuale: l'app prepara il testo, l'utente lo incolla su claude.ai
+# e riporta indietro la risposta. Serve a chi non ha una chiave API a pagamento.
+# ---------------------------------------------------------------------------
+
+class TestoIncollato(BaseModel):
+    testo: str
+    nota: Optional[str] = None
+
+
+@app.post("/api/gare/{gid}/analisi/testo")
+def api_analisi_testo(gid: str, body: AnalisiIn):
+    """Il testo da copiare per farsi fare l'analisi a mano. Non chiama nessuno."""
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    archivio_nome, system = _system_analisi(g, body)
+    testo = manuale.testo_per_analisi(system, chatbot.ISTRUZIONI_ANALISI)
+    return {"testo": testo, "caratteri": len(testo), "archivio": archivio_nome,
+            "avviso": manuale.avviso_lunghezza(testo)}
+
+
+@app.post("/api/gare/{gid}/analisi/incolla")
+def api_analisi_incolla(gid: str, body: TestoIncollato):
+    """L'analisi arrivata a mano finisce dove finirebbe quella via API."""
+    if not body.testo.strip():
+        raise HTTPException(400, "Incolla la risposta prima di salvare.")
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    voce = gare.salva_analisi(gid, body.testo.strip(),
+                              {"origine": "incollata a mano", "nota": body.nota or ""})
+    gare.tocca(g)
+    return voce
+
+
+@app.post("/api/scheda/testo")
+async def api_scheda_testo(file: UploadFile = File(...)):
+    """Istruzioni piu' testo del documento, pronti da incollare."""
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    testo_doc = gare.estrai_testo(file.filename or "documento", dati)
+    if not testo_doc.strip():
+        raise HTTPException(
+            400, "Dal file non si ricava testo: se e' una scansione va prima riconosciuta, "
+                 "oppure compila la scheda a mano.")
+    testo = manuale.testo_per_scheda(testo_doc[:120_000], file.filename or "")
+    return {"testo": testo, "caratteri": len(testo), "nome_file": file.filename,
+            "caratteri_documento": len(testo_doc),
+            "avviso": manuale.avviso_lunghezza(testo)}
+
+
+@app.post("/api/scheda/incolla")
+def api_scheda_incolla(body: TestoIncollato):
+    """
+    La risposta incollata diventa una proposta di scheda. Come per l'estrazione
+    via API non si salva niente: si propone, e l'utente corregge.
+    """
+    if not body.testo.strip():
+        raise HTTPException(400, "Incolla la risposta prima di continuare.")
+    return manuale.leggi_scheda_incollata(body.testo)
+
+
+@app.post("/api/ccnl/testo")
+def api_ccnl_testo(body: DomandaCCNL):
+    """
+    La domanda piu' i soli passaggi trovati nei documenti caricati.
+
+    I passaggi li sceglie il codice, come nella versione automatica: e' il
+    motivo per cui la verifica delle citazioni vale anche sulla risposta
+    incollata a mano.
+    """
+    if not body.domanda.strip():
+        raise HTTPException(400, "Scrivi una domanda.")
+    passaggi = mod_ccnl.cerca_passaggi(body.domanda, body.contratto)
+    if not passaggi:
+        return {"testo": "", "passaggi": [], "nessun_passaggio": True,
+                "avviso": "Nei documenti caricati non c'e' nessun passaggio pertinente: "
+                          "non c'e' niente da chiedere."}
+    testo = manuale.testo_per_ccnl(mod_ccnl.istruzioni(passaggi), body.domanda)
+    return {"testo": testo, "caratteri": len(testo), "passaggi": passaggi,
+            "nessun_passaggio": False, "avviso": manuale.avviso_lunghezza(testo)}
+
+
+class RispostaCCNL(DomandaCCNL):
+    risposta: str
+
+
+@app.post("/api/ccnl/incolla")
+def api_ccnl_incolla(body: RispostaCCNL):
+    """
+    La risposta incollata passa dallo stesso controllo delle citazioni.
+
+    Si ricercano i passaggi con la stessa domanda: e' quello che rende il
+    controllo possibile anche qui. Una citazione che non corrisponde a nessun
+    passaggio viene marcata, incollata a mano esattamente come via API.
+    """
+    if not body.risposta.strip():
+        raise HTTPException(400, "Incolla la risposta prima di controllarla.")
+    passaggi = mod_ccnl.cerca_passaggi(body.domanda, body.contratto)
+    testo, problemi = mod_ccnl.verifica_citazioni(body.risposta, passaggi)
+    return {"risposta": testo, "passaggi": passaggi, "problemi": problemi,
+            "nessun_passaggio": not passaggi}
 
 
 def _archivio_per_settore(settore: str) -> str:

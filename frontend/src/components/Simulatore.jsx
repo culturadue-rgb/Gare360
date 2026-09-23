@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api.js";
+import PonteManuale from "./PonteManuale.jsx";
 
 /**
  * Simulatore di gara.
@@ -315,6 +316,21 @@ export default function Simulatore({ elencoGare = [], garaId, onSelezionaGara })
             </button>
             <span className="nota">l'unica parte affidata all'AI: commenta questi numeri, non li rifà</span>
           </div>
+
+          {/* Senza chiave API il pulsante qui sopra non funziona. La stessa
+              analisi si può però fare a mano su claude.ai: cambia chi preme il
+              pulsante, non cosa viene chiesto. */}
+          <PonteManuale
+            titolo="Oppure: fai l'analisi a mano su claude.ai"
+            descrizione="Serve se il server non ha una chiave API a pagamento. L'app prepara la richiesta completa — scheda, criteri, numeri del simulatore, gare simili dell'archivio — tu la incolli su claude.ai e riporti indietro la risposta. Viene salvata come tutte le altre analisi."
+            carica={() => api.testoAnalisi(garaId, { risultati: risultati || {}, archivio })}
+            salva={async (testo) => {
+              const v = await api.incollaAnalisi(garaId, testo, "fatta a mano su claude.ai");
+              setAnalisi((a) => [v, ...a]);
+              setAnalisiAperta(v);
+            }}
+            etichettaSalva="Salva come analisi"
+          />
         </>
       )}
 

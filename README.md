@@ -102,6 +102,36 @@ accorge da solo e mostra la schermata di accesso. Nessun'altra modifica.
 
 ---
 
+## Usare l'app senza chiave API
+
+Le chiavi API di Anthropic si pagano a consumo. Senza chiave l'app **funziona
+lo stesso**: resta fuori solo l'automatismo, non la sostanza.
+
+Funziona senza chiave: gli archivi, il calendario, la scheda compilata a mano,
+il **simulatore per intero** (i numeri li ha sempre fatti il codice, mai l'AI),
+le stime storiche, l'archiviazione, l'export.
+
+Richiede l'AI: compilare la scheda leggendo un PDF, l'analisi strategica, la
+consultazione dei CCNL. Per queste tre c'è il **ponte manuale**: l'app prepara
+la richiesta completa, la si incolla in una conversazione su
+[claude.ai](https://claude.ai/new), e si riporta indietro la risposta. Il
+risultato finisce dove sarebbe finito comunque — stessa scheda, stesso archivio
+delle analisi, **stesso controllo delle citazioni** sui CCNL, che è codice e non
+dipende da come è arrivata la risposta.
+
+Cambia chi preme il pulsante, non cosa viene chiesto.
+
+| Dove | Cosa fa il ponte |
+|---|---|
+| Scheda nuova gara | estrae il testo del documento e prepara l'elenco esatto dei campi; la risposta torna come righe «campo: valore» e riempie il modulo |
+| Simulatore → analisi | prepara scheda, criteri, numeri del simulatore, stime storiche e gare simili; la risposta si salva come analisi |
+| Archivio CCNL | cerca **col codice** i passaggi pertinenti e prepara la domanda con quelli soltanto; la risposta passa dalla verifica delle citazioni |
+
+Le righe che non corrispondono a nessun campo non vengono buttate via in
+silenzio: tornano indietro elencate, così si vede cosa è rimasto fuori.
+
+---
+
 ## Le tre regole che il codice rispetta ovunque
 
 **1. Ogni dato estratto in automatico è correggibile a mano**, prima e dopo il salvataggio.

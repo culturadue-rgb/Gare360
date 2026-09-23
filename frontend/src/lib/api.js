@@ -133,6 +133,11 @@ Object.assign(api, {
   // --- Scheda di rilevazione ---
   schedaCampi: () => call("/api/scheda/campi"),
   estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
+
+  // --- Ponte manuale: l'app prepara il testo, l'utente lo incolla su claude.ai
+  //     e riporta indietro la risposta. Serve senza chiave API a pagamento.
+  testoScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/testo", f); },
+  incollaScheda: (testo) => call("/api/scheda/incolla", { method: "POST", body: json({ testo }) }),
   controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
 
   // --- Archivio CCNL ---
@@ -145,6 +150,8 @@ Object.assign(api, {
   aggiornaCCNL: (id, campi) => call(`/api/ccnl/documenti/${id}`, { method: "PATCH", body: json(campi) }),
   eliminaCCNL: (id) => call(`/api/ccnl/documenti/${id}`, { method: "DELETE" }),
   chiediCCNL: (corpo) => call("/api/ccnl/chiedi", { method: "POST", body: json(corpo) }),
+  testoCCNL: (corpo) => call("/api/ccnl/testo", { method: "POST", body: json(corpo) }),
+  incollaCCNL: (corpo) => call("/api/ccnl/incolla", { method: "POST", body: json(corpo) }),
 
   // --- Archiviazione di una gara ---
   precompilaArchivio: (gid) => call(`/api/gare/${gid}/precompila-archivio`),
@@ -155,6 +162,8 @@ Object.assign(api, {
   profiliConcorrenti: (p = {}) => call("/api/storico/concorrenti" + qs(p)),
   simulaScenari: (corpo) => call("/api/simula/scenari", { method: "POST", body: json(corpo) }),
   analizzaGara: (gid, corpo) => call(`/api/gare/${gid}/analisi`, { method: "POST", body: json(corpo) }),
+  testoAnalisi: (gid, corpo) => call(`/api/gare/${gid}/analisi/testo`, { method: "POST", body: json(corpo) }),
+  incollaAnalisi: (gid, testo, nota) => call(`/api/gare/${gid}/analisi/incolla`, { method: "POST", body: json({ testo, nota }) }),
   elencoAnalisi: (gid) => call(`/api/gare/${gid}/analisi`),
   leggiAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`),
   eliminaAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`, { method: "DELETE" }),

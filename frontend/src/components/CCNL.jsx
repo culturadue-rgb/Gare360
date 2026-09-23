@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.js";
+import PonteManuale from "./PonteManuale.jsx";
 
 /**
  * Archivio dei contratti collettivi e consultazione su fonti certe.
@@ -138,6 +139,17 @@ export default function CCNL() {
           {inCorso === "chiedo" ? "Cerco…" : "Chiedi"}
         </button>
       </div>
+      {/* Senza chiave API il pulsante non funziona. La ricerca dei passaggi però
+          la fa il codice, non l'AI: si può quindi portare la domanda e i passaggi
+          su claude.ai e riportare indietro la risposta, che passa dallo stesso
+          controllo delle citazioni. */}
+      <PonteManuale
+        titolo="Oppure: chiedi a mano su claude.ai"
+        descrizione="Serve se il server non ha una chiave API a pagamento. L'app cerca da sola i passaggi pertinenti nei documenti caricati e prepara la domanda con quei passaggi soltanto. La risposta che riporti indietro viene controllata citazione per citazione, come se fosse arrivata dall'AI."
+        carica={() => api.testoCCNL({ domanda, contratto })}
+        salva={async (testo) => setRisposta(await api.incollaCCNL({ domanda, contratto, risposta: testo }))}
+        etichettaSalva="Controlla le citazioni"
+      />
 
       {risposta && (
         <div className="risposta-ccnl">

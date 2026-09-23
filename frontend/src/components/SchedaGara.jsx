@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.js";
+import PonteManuale from "./PonteManuale.jsx";
 
 /**
  * Scheda di rilevazione di una nuova gara.
@@ -52,6 +53,8 @@ export default function SchedaGara({ onCreata }) {
   const [salvando, setSalvando] = useState(false);
   const [errore, setErrore] = useState(null);
   const fileRef = useRef(null);
+  const filePonteRef = useRef(null);
+  const [filePonte, setFilePonte] = useState(null);
 
   useEffect(() => { api.schedaCampi().then(setDef).catch((e) => setErrore(e.message)); }, []);
 
@@ -125,11 +128,53 @@ export default function SchedaGara({ onCreata }) {
         <span className="nota">oppure compila a mano qui sotto</span>
       </div>
 
+      {/* Senza chiave API il pulsante qui sopra non funziona. Il documento però
+          l'app lo sa leggere lo stesso: prepara istruzioni e testo, si incollano
+          su claude.ai e si riporta indietro l'elenco «campo: valore». */}
+      <p className="nota">
+        Documento da leggere:{" "}
+        <input ref={filePonteRef} type="file" accept=".pdf,.docx,.doc,.txt"
+               onChange={(e) => setFilePonte(e.target.files?.[0] || null)} />
+      </p>
+      <PonteManuale
+        titolo="Oppure: fatti compilare la scheda a mano su claude.ai"
+        descrizione="Serve se il server non ha una chiave API a pagamento. Scegli il documento: l'app ne estrae il testo e prepara la richiesta con l'elenco esatto dei campi. Incollala su claude.ai, poi riporta qui la risposta. I campi arrivano nel modulo qui sotto, sempre correggibili."
+        etichettaPrepara={filePonte ? `Prepara il testo da «${filePonte.name}»` : "Scegli prima un documento"}
+        attivo={!!filePonte}
+        carica={() => api.testoScheda(filePonte)}
+        salva={async (testo) => {
+          const r = await api.incollaScheda(testo);
+          setTitolo(r.titolo || titolo);
+          setScheda((s2) => ({ ...s2, ...r.scheda }));
+          if (r.criteri?.elenco?.length) setCriteri({ ...r.criteri, elenco: r.criteri.elenco });
+          setOrigine({ file: filePonte?.name || "risposta incollata", caratteri: r.campi_compilati,
+                       manuale: true, scartate: r.non_riconosciute || [] });
+        }}
+        etichettaSalva="Metti i campi nel modulo"
+      />
+
       {origine && (
         <div className="avviso">
-          Campi proposti leggendo <b>{origine.file}</b> ({origine.caratteri.toLocaleString("it-IT")} caratteri).
-          <b> Controllali tutti prima di salvare</b>: quello che l'AI non ha trovato è rimasto vuoto,
-          non indovinato.
+          {origine.manuale ? (
+            <>
+              Dalla risposta incollata sono stati riconosciuti <b>{origine.caratteri}</b> campi.
+              <b> Controllali tutti prima di salvare</b>: quello che non è stato trovato è rimasto
+              vuoto, non indovinato.
+              {origine.scartate?.length > 0 && (
+                <>
+                  {" "}Queste righe non corrispondono a nessun campo e sono state lasciate fuori —
+                  se servono, riportale a mano:
+                  <ul>{origine.scartate.map((r, i) => <li key={i}><code>{r}</code></li>)}</ul>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              Campi proposti leggendo <b>{origine.file}</b> ({origine.caratteri.toLocaleString("it-IT")} caratteri).
+              <b> Controllali tutti prima di salvare</b>: quello che l'AI non ha trovato è rimasto vuoto,
+              non indovinato.
+            </>
+          )}
         </div>
       )}
 
