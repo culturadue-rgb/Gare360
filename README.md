@@ -84,7 +84,7 @@ schermata di consenso su Google Cloud è rimasta in stato "Test" invece che "In 
 
 | Nome | A cosa serve |
 |---|---|
-| `VITE_API_URL` | indirizzo del backend su Render, **senza barra finale** |
+| `VITE_API_URL` | facoltativa: indirizzo del backend, **senza barra finale**. Se manca, il sito usa `https://gare360.onrender.com` |
 
 ---
 

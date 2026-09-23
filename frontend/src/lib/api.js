@@ -1,6 +1,18 @@
 // Tutte le chiamate al backend passano da qui.
-// VITE_API_URL: URL del backend (Render). Vuoto in sviluppo => proxy di Vite su /api.
-const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+//
+// Indirizzo del backend, in ordine:
+//   1. VITE_API_URL, se qualcuno l'ha impostata (serve per puntare a un backend
+//      diverso senza ritoccare il codice);
+//   2. in sviluppo, stringa vuota: ci pensa il proxy di Vite su /api;
+//   3. altrimenti il backend vero su Render.
+//
+// Il terzo caso c'e' apposta: senza di lui, se la variabile su Vercel manca o si
+// perde, il sito cerca il backend su se stesso, non lo trova e mostra soltanto
+// "Il backend non risponde" - un guasto che sembra grave e invece e' una casella
+// vuota in un pannello.
+const PREDEFINITO = "https://gare360.onrender.com";
+const BASE = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? "" : PREDEFINITO))
+  .replace(/\/$/, "");
 
 // Serve ai link di scaricamento diretto, che non passano da fetch.
 export const BASE_API = BASE;
