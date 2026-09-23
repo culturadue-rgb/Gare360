@@ -693,7 +693,7 @@ def api_ccnl_chiedi(body: DomandaCCNL):
     system = mod_ccnl.istruzioni(passaggi)
     try:
         risposta = chatbot.chiama(system, [{"role": "user", "content": body.domanda}],
-                                  body.modello, max_tokens=2000, temperatura=0)
+                                  body.modello, max_tokens=2000)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Consultazione non riuscita: {e}") from e
 
@@ -871,7 +871,7 @@ def api_gara_analisi(gid: str, body: AnalisiIn):
     system = chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), dati)
     try:
         testo = chatbot.chiama(system, [{"role": "user", "content": chatbot.ISTRUZIONI_ANALISI}],
-                               body.modello, max_tokens=8000)
+                               body.modello, max_tokens=8000, ragiona=True)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(502, f"Analisi non riuscita: {e}") from e
 

@@ -10,7 +10,7 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false          # inseriscila dalla dashboard Render, mai nel repo
       - key: STRATEGA_MODEL
-        value: claude-sonnet-4-6
+        value: claude-opus-5
       - key: ALLOWED_ORIGINS
         value: https://gare360-ynfu.vercel.app
       - key: DATA_DIR

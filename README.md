@@ -73,7 +73,7 @@ schermata di consenso su Google Cloud è rimasta in stato "Test" invece che "In 
 | `ANTHROPIC_API_KEY` | per l'AI | assistente, estrazione della scheda, analisi strategica, consultazione CCNL |
 | `ALLOWED_ORIGINS` | sì | i siti autorizzati a parlare col backend: `https://gare360-ynfu.vercel.app` |
 | `DATA_DIR` | sì | dove l'app scrive, es. `/var/data` |
-| `STRATEGA_MODEL` | no | modello di default |
+| `STRATEGA_MODEL` | no | modello di default (`claude-opus-5`; per spendere meno: `claude-sonnet-5`) |
 | `APP_PASSWORD` | no | **spenta**: impostandola, l'app chiede la password all'ingresso |
 | `MOSTRA_DOCS` | no | lasciare `0`: a `1` pubblica l'elenco dei comandi dell'API |
 | `ANTEPRIME_VERCEL` | no | lasciare `0`: a `1` riammette qualsiasi indirizzo `*.vercel.app` |

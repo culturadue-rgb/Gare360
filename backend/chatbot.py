@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 
 PROMPT_PATH = Path(os.environ.get("PROMPTS_DIR", Path(__file__).parent / "prompts")) / "stratega_gare.md"
-MODELLO_DEFAULT = os.environ.get("STRATEGA_MODEL", "claude-sonnet-4-6")
+MODELLO_DEFAULT = os.environ.get("STRATEGA_MODEL", "claude-opus-5")
 
 
 def carica_prompt() -> str:
@@ -68,17 +68,29 @@ def rispondi(messaggi: list[dict], system: str, modello: str | None = None) -> s
 # ---------------------------------------------------------------------------
 
 def chiama(system: str, messaggi: list[dict], modello: str | None = None,
-           max_tokens: int = 3000, temperatura: float | None = None) -> str:
-    """Chiamata generica al modello. Solleva se manca la chiave o la chiamata fallisce."""
+           max_tokens: int = 3000, ragiona: bool = False) -> str:
+    """
+    Chiamata generica al modello.
+
+    `ragiona=True` accende il ragionamento esteso: serve all'analisi strategica,
+    che deve mettere in fila documenti, storico e scenari. Per le estrazioni e le
+    risposte sui CCNL non serve e costerebbe soltanto.
+
+    Nota: i modelli attuali NON accettano piu' il parametro `temperature` (danno
+    errore 400). La coerenza delle risposte sui CCNL non viene comunque da li',
+    ma dal prompt rigido e dal controllo delle citazioni fatto dal codice.
+    """
     import anthropic
 
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise RuntimeError("Nessuna chiave API configurata sul server (ANTHROPIC_API_KEY).")
     client = anthropic.Anthropic(api_key=key)
-    extra = {} if temperatura is None else {"temperature": temperatura}
+    extra = {"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}} if ragiona else {}
     resp = client.messages.create(model=modello or MODELLO_DEFAULT, max_tokens=max_tokens,
                                   system=system, messages=messaggi, **extra)
+    # Con il ragionamento acceso la risposta contiene anche blocchi "thinking":
+    # si tiene solo il testo.
     return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
 
 
