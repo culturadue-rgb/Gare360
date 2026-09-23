@@ -1,213 +1,353 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "../lib/api.js";
-import GrigliaEdit from "./GrigliaEdit.jsx";
 
-const FORMULE = [
-  ["lineare", "Interpolazione lineare sul ribasso"],
-  ["proporzionale", "Proporzionale al ribasso (R / Rmax)"],
-  ["bilineare", "Bilineare con soglia (a due rette)"],
-];
+/**
+ * Simulatore di gara.
+ *
+ * Due livelli, tenuti separati di proposito:
+ *   A) il CALCOLO, fatto dal codice: stessi ingressi, stessi numeri, sempre.
+ *   B) l'ANALISI strategica, che è l'unica cosa affidata all'AI, e solo su
+ *      richiesta esplicita. L'AI commenta i numeri, non li rifà.
+ *
+ * I parametri arrivano dalla scheda della gara e restano tutti modificabili;
+ * "Ripristina dalla scheda" li riporta com'erano.
+ */
 
-const n = (v, d = 2) => (typeof v === "number" ? v.toFixed(d) : "—");
+const RIBASSI_RAPIDI = [3, 5, 7];
+const n = (v) => { const x = Number(String(v ?? "").replace(",", ".")); return Number.isFinite(x) ? x : null; };
 
-export default function Simulatore({ prefill, garaTitolo }) {
-  const [cfg, setCfg] = useState({
-    nome: "Nuova gara", base_asta: 500000, punti_tecnico: 70, punti_economico: 30,
-    formula_prezzo: "lineare", coeff_bilineare: 0.85, usa_soglia: false, soglia: 40, riparametrazione: false,
-  });
-  const [criteri, setCriteri] = useState([
-    { nome: "Progetto tecnico", tipo: "qualitativo", punti_max: 30, resa_override: null },
-    { nome: "Migliorie", tipo: "qualitativo", punti_max: 20, resa_override: null },
-    { nome: "Certificazioni", tipo: "tabellare", punti_max: 10, resa_override: null },
-    { nome: "Esperienza analoga", tipo: "tabellare", punti_max: 10, resa_override: null },
-  ]);
-  const [ribasso, setRibasso] = useState(12);
-  const [conc, setConc] = useState([
-    { nome: "Concorrente A", livello_tecnico: 0.85, ribasso: 15 },
-    { nome: "Concorrente B", livello_tecnico: 0.7, ribasso: 22 },
-  ]);
-  const [res, setRes] = useState(null);
+const ARCHIVIO_DI = (settore) => {
+  const s = (settore || "").toLowerCase();
+  if (s.startsWith("cultur")) return "Cultura";
+  if (s.startsWith("social")) return "Sociale";
+  if (s.startsWith("serviz") || s.startsWith("educ")) return "Servizi_educativi";
+  return "Cultura";
+};
+
+const FORMULA_API = {
+  "Lineare / proporzionale al ribasso": "lineare",
+  "Bilineare con soglia": "bilineare",
+};
+
+export default function Simulatore({ elencoGare = [], garaId, onSelezionaGara }) {
+  const [gara, setGara] = useState(null);
+  const [par, setPar] = useState(null);          // parametri modificabili
+  const [rivali, setRivali] = useState([]);
+  const [ribassi, setRibassi] = useState(RIBASSI_RAPIDI);
+  const [ribassoLibero, setRibassoLibero] = useState("");
+  const [deltaTecnici, setDeltaTecnici] = useState([-2, 4]);
+  const [stime, setStime] = useState(null);
+  const [escluse, setEscluse] = useState([]);
+  const [risultati, setRisultati] = useState(null);
+  const [analisi, setAnalisi] = useState([]);
+  const [analisiAperta, setAnalisiAperta] = useState(null);
+  const [inCorso, setInCorso] = useState(null);
   const [errore, setErrore] = useState(null);
-  const [attesa, setAttesa] = useState(false);
-  const [origine, setOrigine] = useState(null);
 
-  // Dati estratti dall'assistente per la gara aperta
+  // ---- caricamento della gara scelta -------------------------------------
   useEffect(() => {
-    if (!prefill) return;
-    const d = prefill;
-    setCfg((c) => ({
-      ...c, nome: d.nome || garaTitolo || c.nome, base_asta: d.base_asta ?? c.base_asta,
-      punti_tecnico: d.punti_tecnico ?? c.punti_tecnico, punti_economico: d.punti_economico ?? c.punti_economico,
-      formula_prezzo: ["lineare", "proporzionale", "bilineare"].includes(d.formula_prezzo) ? d.formula_prezzo : c.formula_prezzo,
-      coeff_bilineare: d.coeff_bilineare ?? c.coeff_bilineare,
-      usa_soglia: d.soglia_sbarramento != null, soglia: d.soglia_sbarramento ?? c.soglia,
-      riparametrazione: !!d.riparametrazione,
-    }));
-    if (Array.isArray(d.criteri) && d.criteri.length) {
-      setCriteri(d.criteri.map((x) => ({ nome: x.nome || "", tipo: x.tipo === "tabellare" ? "tabellare" : "qualitativo", punti_max: Number(x.punti_max) || 0, resa_override: null })));
-    }
-    setRes(null);
-    setOrigine({ fonte: d.fonte, note: d.note_formula, titolo: garaTitolo });
-  }, [prefill, garaTitolo]);
+    if (!garaId) { setGara(null); setPar(null); setRisultati(null); return; }
+    api.gara(garaId).then((g) => { setGara(g); setPar(daScheda(g)); setRisultati(null); })
+      .catch((e) => setErrore(e.message));
+    api.elencoAnalisi(garaId).then((r) => setAnalisi(r.analisi)).catch(() => {});
+  }, [garaId]);
 
-  const set = (k) => (e) => setCfg({ ...cfg, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.type === "number" ? Number(e.target.value) : e.target.value });
+  const archivio = ARCHIVIO_DI(gara?.settore);
 
-  const sommaCriteri = criteri.reduce((s, c) => s + (Number(c.punti_max) || 0), 0);
+  const caricaStime = useCallback(() => {
+    api.stimeStoriche({ archivio, escludi: escluse.join(",") })
+      .then(setStime).catch(() => setStime(null));
+  }, [archivio, escluse]);
+  useEffect(() => { caricaStime(); }, [caricaStime]);
 
-  async function simula() {
-    setAttesa(true); setErrore(null);
-    try {
-      const r = await api.simula({
-        config: {
-          nome: cfg.nome, base_asta: cfg.base_asta, punti_tecnico: cfg.punti_tecnico, punti_economico: cfg.punti_economico,
-          formula_prezzo: cfg.formula_prezzo, coeff_bilineare: Number(cfg.coeff_bilineare),
-          soglia_sbarramento: cfg.usa_soglia ? cfg.soglia : null, riparametrazione: cfg.riparametrazione,
-          criteri: criteri.filter((c) => c.nome?.trim() && c.punti_max != null)
-            .map((c) => ({ ...c, punti_max: Number(c.punti_max), resa_override: c.resa_override === "" ? null : c.resa_override })),
-        },
-        ribasso_nostro: ribasso,
-        concorrenti: conc.filter((c) => c.nome?.trim()),
-      });
-      setRes(r);
-    } catch (e) { setErrore(e.message); } finally { setAttesa(false); }
+  function daScheda(g) {
+    const c = g?.criteri || {};
+    return {
+      peso_tecnico: c.peso_tecnico ?? "",
+      peso_economico: c.peso_economico ?? "",
+      soglia: c.soglia_sbarramento ?? "",
+      riparametrazione: c.riparametrazione === "Sì",
+      formula: c.formula_economica ?? "",
+      coefficiente: c.coefficiente_formula ?? "0.85",
+      formula_testo: c.formula_testo ?? "",
+      base_asta: g?.base_asta ?? g?.scheda?.base_asta ?? "",
+      criteri: (c.elenco || []).map((r) => ({
+        nome: [r.codice, r.criterio, r.sub_criterio].filter(Boolean).join(" · ") || "criterio",
+        tipo: r.tipo || "qualitativo",
+        punti_max: n(r.punti_max) ?? 0,
+      })),
+    };
   }
 
-  const noi = res?.noi;
-  const s = res?.sensibilita;
+  // ---- calcolo -----------------------------------------------------------
+  async function calcola() {
+    if (!par) return;
+    setInCorso("calcolo"); setErrore(null);
+    try {
+      const resa = stime?.resa_tecnica?.disponibile ? stime.resa_tecnica.media / 100 : null;
+      const corpo = {
+        config: {
+          nome: gara?.titolo || "gara",
+          base_asta: n(par.base_asta) ?? 0,
+          punti_tecnico: n(par.peso_tecnico) ?? 0,
+          punti_economico: n(par.peso_economico) ?? 0,
+          formula_prezzo: FORMULA_API[par.formula] || (par.formula ? "non_supportata" : "lineare"),
+          coeff_bilineare: n(par.coefficiente) ?? 0.85,
+          soglia_sbarramento: n(par.soglia),
+          riparametrazione: !!par.riparametrazione,
+          criteri: (par.criteri.length ? par.criteri : [{ nome: "Offerta tecnica", tipo: "qualitativo", punti_max: n(par.peso_tecnico) ?? 0 }])
+            .map((c) => ({ ...c, resa_override: resa })),
+        },
+        concorrenti: rivali.filter((r) => r.nome).map((r) => ({
+          nome: r.nome, livello_tecnico: n(r.livello) ?? 0.8, ribasso: n(r.ribasso) ?? 0,
+        })),
+        ribassi, delta_tecnici: deltaTecnici, formula_testo: par.formula_testo,
+      };
+      setRisultati(await api.simulaScenari(corpo));
+    } catch (e) { setErrore(e.message); }
+    finally { setInCorso(null); }
+  }
 
-  return (
-    <div className="due-col">
-      <div>
-        <h2>Configurazione gara</h2>
-        {origine && <div className="avviso info">Dati caricati dalla gara «{origine.titolo}»{origine.fonte ? ` (da ${origine.fonte})` : ""}. {origine.note && <>Formula prezzo nel disciplinare: <i>{origine.note}</i>. </>}Controlla i valori prima di simulare.</div>}
-        <label className="campo"><span>Nome gara</span><input type="text" value={cfg.nome} onChange={set("nome")} /></label>
-        <label className="campo"><span>Importo a base d'asta (€)</span><input type="number" min="0" step="10000" value={cfg.base_asta} onChange={set("base_asta")} /></label>
-        <div className="riga">
-          <label className="campo"><span>Punti tecnico</span><input type="number" min="0" max="100" step="5" value={cfg.punti_tecnico} onChange={set("punti_tecnico")} /></label>
-          <label className="campo"><span>Punti economico</span><input type="number" min="0" max="100" step="5" value={cfg.punti_economico} onChange={set("punti_economico")} /></label>
-        </div>
-        {Math.abs(cfg.punti_tecnico + cfg.punti_economico - 100) > 1e-6 && <div className="avviso">Tecnico + economico dovrebbero fare 100.</div>}
+  async function analisiCompleta() {
+    if (!garaId) return;
+    setInCorso("analisi"); setErrore(null);
+    try {
+      const v = await api.analizzaGara(garaId, { risultati: risultati || {}, archivio });
+      setAnalisi((a) => [v, ...a]);
+      setAnalisiAperta(v);
+    } catch (e) { setErrore(e.message); }
+    finally { setInCorso(null); }
+  }
 
-        <label className="campo"><span>Formula punteggio prezzo</span>
-          <select value={cfg.formula_prezzo} onChange={set("formula_prezzo")}>
-            {FORMULE.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+  async function cancellaAnalisi(id) {
+    try { await api.eliminaAnalisi(garaId, id); setAnalisi((a) => a.filter((x) => x.id !== id)); setAnalisiAperta(null); }
+    catch (e) { setErrore(e.message); }
+  }
+
+  const aggiungiRibasso = () => {
+    const v = n(ribassoLibero);
+    if (v !== null && !ribassi.includes(v)) setRibassi([...ribassi, v].sort((a, b) => a - b));
+    setRibassoLibero("");
+  };
+
+  // ---- vista -------------------------------------------------------------
+  if (!garaId) {
+    return (
+      <div className="riquadro compatto">
+        <h2>Simulatore</h2>
+        <label className="campo">
+          <span>Scegli la gara</span>
+          <select value="" onChange={(e) => onSelezionaGara?.(e.target.value)}>
+            <option value="">— nessuna gara —</option>
+            {elencoGare.map((g) => <option key={g.id} value={g.id}>{g.titolo}</option>)}
           </select>
         </label>
-        {cfg.formula_prezzo === "bilineare" && (
-          <label className="campo"><span>Coefficiente X</span>
-            <select value={cfg.coeff_bilineare} onChange={set("coeff_bilineare")}>
-              {[0.8, 0.85, 0.9].map((v) => <option key={v} value={v}>{v.toFixed(2)}</option>)}
-            </select>
-          </label>
+        <p className="nota">
+          Il simulatore prende i parametri dalla scheda della gara: pesi, criteri,
+          formula economica, soglia. Scegline una per cominciare.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="riquadro compatto">
+      <h2>Simulatore<small>{gara?.titolo}</small></h2>
+
+      <label className="campo">
+        <span>Gara</span>
+        <select value={garaId} onChange={(e) => onSelezionaGara?.(e.target.value)}>
+          {elencoGare.map((g) => <option key={g.id} value={g.id}>{g.titolo}</option>)}
+        </select>
+      </label>
+
+      {/* ---------- parametri ---------- */}
+      {par && (
+        <>
+          <div className="riga">
+            <label className="campo"><span>Punti tecnica</span>
+              <input value={par.peso_tecnico} onChange={(e) => setPar({ ...par, peso_tecnico: e.target.value })} /></label>
+            <label className="campo"><span>Punti prezzo</span>
+              <input value={par.peso_economico} onChange={(e) => setPar({ ...par, peso_economico: e.target.value })} /></label>
+            <label className="campo"><span>Sbarramento</span>
+              <input value={par.soglia} onChange={(e) => setPar({ ...par, soglia: e.target.value })} /></label>
+          </div>
+          <label className="campo"><span>Base d'asta (€)</span>
+            <input value={par.base_asta} onChange={(e) => setPar({ ...par, base_asta: e.target.value })} /></label>
+          <label className="campo"><span>Formula del prezzo</span>
+            <input value={par.formula || "non indicata"} readOnly title="Si cambia nella scheda della gara" /></label>
+          <div className="azioni">
+            <button className="btn piccolo" onClick={() => setPar(daScheda(gara))}>Ripristina dalla scheda</button>
+          </div>
+        </>
+      )}
+
+      {/* ---------- stime storiche ---------- */}
+      {stime && (
+        <div className="stime">
+          <h3>Dalla nostra esperienza<small>archivio {archivio.replace("_", " ")}</small></h3>
+          {stime.resa_tecnica.disponibile ? (
+            <>
+              <p>
+                Prendiamo in media il <b>{stime.resa_tecnica.media}%</b> dei punti tecnici
+                (mediana {stime.resa_tecnica.mediana}%, da {stime.resa_tecnica.minimo}% a {stime.resa_tecnica.massimo}%).
+              </p>
+              <p className={`nota affidabilita-${stime.resa_tecnica.affidabilita.replace(" ", "-")}`}>
+                Affidabilità <b>{stime.resa_tecnica.affidabilita}</b> — {stime.resa_tecnica.nota}
+              </p>
+              <details>
+                <summary>Le {stime.resa_tecnica.n} gare usate</summary>
+                <ul className="gare-usate">
+                  {stime.resa_tecnica.gare_usate.map((g) => (
+                    <li key={g.id_gara}>
+                      <label>
+                        <input type="checkbox" checked={!escluse.includes(g.id_gara)}
+                               onChange={(e) => setEscluse(e.target.checked
+                                 ? escluse.filter((x) => x !== g.id_gara) : [...escluse, g.id_gara])} />
+                        <b>{g.id_gara}</b> {g.valore}% — {g.ente?.slice(0, 40)} <i>({g.esito})</i>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <p className="nota">Togli la spunta a una gara per escluderla dalla media.</p>
+              </details>
+            </>
+          ) : (
+            <p className="nota">Nessuna gara in archivio ha i punteggi tecnici: nessuna stima possibile.</p>
+          )}
+          {stime.avvisi?.map((a, i) => <div key={i} className="avviso attenzione">{a}</div>)}
+        </div>
+      )}
+
+      {/* ---------- concorrenti ---------- */}
+      <h3>Concorrenti ipotizzati</h3>
+      {rivali.map((r, i) => (
+        <div className="riga" key={i}>
+          <input placeholder="nome" value={r.nome}
+                 onChange={(e) => setRivali(rivali.map((x, j) => j === i ? { ...x, nome: e.target.value } : x))} />
+          <input placeholder="livello 0-1" value={r.livello}
+                 onChange={(e) => setRivali(rivali.map((x, j) => j === i ? { ...x, livello: e.target.value } : x))} />
+          <input placeholder="ribasso %" value={r.ribasso}
+                 onChange={(e) => setRivali(rivali.map((x, j) => j === i ? { ...x, ribasso: e.target.value } : x))} />
+          <button className="btn piccolo" onClick={() => setRivali(rivali.filter((_, j) => j !== i))}>×</button>
+        </div>
+      ))}
+      <div className="azioni">
+        <button className="btn piccolo" onClick={() => setRivali([...rivali, { nome: "", livello: "0.8", ribasso: "5" }])}>
+          + Concorrente
+        </button>
+        {stime?.n_concorrenti?.disponibile && (
+          <span className="nota">di solito se ne presentano {stime.n_concorrenti.media}</span>
         )}
-        <div className="riga">
-          <div>
-            <label className="spunta"><input type="checkbox" checked={cfg.usa_soglia} onChange={set("usa_soglia")} /> Soglia di sbarramento</label>
-            <label className="campo"><span>Punti tecnici minimi</span><input type="number" min="0" max="100" value={cfg.soglia} disabled={!cfg.usa_soglia} onChange={set("soglia")} /></label>
-          </div>
-          <label className="spunta"><input type="checkbox" checked={cfg.riparametrazione} onChange={set("riparametrazione")} /> Riparametrazione tecnica</label>
-        </div>
-
-        <h3>Criteri tecnici</h3>
-        <p className="nota">Lascia vuota la resa per usare il tracker (stesso nome di criterio); 0–1 per forzarla qui.</p>
-        <GrigliaEdit
-          righe={criteri} onChange={setCriteri}
-          nuovaRiga={() => ({ nome: "", tipo: "qualitativo", punti_max: 0, resa_override: null })}
-          etichettaAggiungi="Aggiungi criterio"
-          colonne={[
-            { key: "nome", label: "Criterio", type: "text" },
-            { key: "tipo", label: "Tipo", type: "select", options: ["tabellare", "qualitativo"], width: 130 },
-            { key: "punti_max", label: "Punti max", type: "number", min: 0, step: 1, width: 90 },
-            { key: "resa_override", label: "Resa manuale", type: "number", min: 0, max: 1, step: 0.05, width: 110 },
-          ]}
-        />
-        {Math.abs(sommaCriteri - cfg.punti_tecnico) > 1e-6 && <div className="avviso">I criteri sommano {sommaCriteri} punti ma il tecnico vale {cfg.punti_tecnico}.</div>}
-
-        <h3>Offerta economica</h3>
-        <label className="campo"><span>Nostro ribasso</span>
-          <div className="slider">
-            <input type="range" min="0" max="60" step="0.5" value={ribasso} onChange={(e) => setRibasso(Number(e.target.value))} />
-            <output>{ribasso.toFixed(1)}%</output>
-          </div>
-        </label>
-
-        <h3>Concorrenti (profili ipotizzati)</h3>
-        <GrigliaEdit
-          righe={conc} onChange={setConc}
-          nuovaRiga={() => ({ nome: `Concorrente ${String.fromCharCode(65 + conc.length)}`, livello_tecnico: 0.75, ribasso: 15 })}
-          etichettaAggiungi="Aggiungi concorrente"
-          colonne={[
-            { key: "nome", label: "Nome", type: "text" },
-            { key: "livello_tecnico", label: "Livello tecnico (0–1)", type: "number", min: 0, max: 1, step: 0.05, width: 140 },
-            { key: "ribasso", label: "Ribasso %", type: "number", min: 0, max: 100, step: 0.5, width: 100 },
-          ]}
-        />
-
-        <div className="azioni" style={{ marginTop: "1rem" }}>
-          <button className="btn primario pieno" onClick={simula} disabled={attesa}>{attesa ? "Calcolo…" : "Simula"}</button>
-        </div>
-        {errore && <div className="avviso errore">{errore}</div>}
       </div>
 
-      <div>
-        <h2>Risultato</h2>
-        {!res ? (
-          <div className="vuoto">Compila la configurazione e premi <b>Simula</b>. Stessi input, stesso risultato: nessuna casualità.</div>
-        ) : (
-          <>
-            <div className="metriche">
-              <div className="metrica"><span>Posizione</span><strong>{res.posizione}°</strong></div>
-              <div className="metrica"><span>Totale</span><strong>{n(noi.totale)}</strong></div>
-              <div className="metrica"><span>Tecnico</span><strong>{n(noi.tecnico)}</strong></div>
-              <div className="metrica"><span>Economico</span><strong>{n(noi.economico)}</strong></div>
-            </div>
+      {/* ---------- scenari da calcolare ---------- */}
+      <h3>Scenari</h3>
+      <div className="filtri">
+        {ribassi.map((r) => (
+          <button key={r} onClick={() => setRibassi(ribassi.filter((x) => x !== r))} title="togli">
+            {r}% ×
+          </button>
+        ))}
+        <input style={{ width: "5rem" }} placeholder="altro %" value={ribassoLibero}
+               onChange={(e) => setRibassoLibero(e.target.value)}
+               onKeyDown={(e) => e.key === "Enter" && aggiungiRibasso()} />
+        <button className="btn piccolo" onClick={aggiungiRibasso}>+</button>
+      </div>
 
-            {noi.escluso
-              ? <div className="esito esclusa">Esclusi: tecnico sotto la soglia di {n(s.punti_tecnici_mancanti)} punti</div>
-              : res.posizione === 1
-                ? <div className="esito vinta">Gara vinta nella simulazione</div>
-                : <div className="esito persa">Distacco dal primo: {n(res.distacco)} punti</div>}
+      <div className="azioni">
+        <button className="btn primario" disabled={inCorso === "calcolo"} onClick={calcola}>
+          {inCorso === "calcolo" ? "Calcolo…" : "Calcola gli scenari"}
+        </button>
+      </div>
 
-            <h3>Graduatoria</h3>
-            <table>
-              <thead><tr><th>Offerente</th><th className="num">Tecnico</th><th className="num">Economico</th><th className="num">Totale</th><th className="num">Ribasso</th></tr></thead>
+      {errore && <div className="avviso errore">{errore}</div>}
+
+      {/* ---------- risultati ---------- */}
+      {risultati && (
+        <>
+          <div className="tabella-scorrevole">
+            <table className="tabella-archivio">
+              <thead>
+                <tr><th>Scenario</th><th>Tecnica</th><th>Prezzo</th><th>Totale</th><th>Pos.</th><th>Esito</th></tr>
+              </thead>
               <tbody>
-                {res.graduatoria.map((o) => (
-                  <tr key={o.nome} className={o.nome === "Noi" ? "noi" : o.escluso ? "escluso" : ""}>
-                    <td>{o.nome}{o.escluso ? " (escluso)" : ""}</td>
-                    <td className="num">{n(o.tecnico)}</td><td className="num">{n(o.economico)}</td>
-                    <td className="num">{n(o.totale)}</td><td className="num">{n(o.ribasso, 1)}%</td>
+                {risultati.scenari.map((s, i) => (
+                  <tr key={i} className={s.vinciamo ? "aperta" : ""}>
+                    <td>{s.etichetta}</td>
+                    {s.calcolabile ? (
+                      <>
+                        <td>{s.nostro_tecnico}</td><td>{s.nostro_economico}</td>
+                        <td><b>{s.nostro_totale}</b></td><td>{s.posizione}</td>
+                        <td>{s.vinciamo ? "vince" : `vince ${s.vincitore}`}</td>
+                      </>
+                    ) : (
+                      <td colSpan={5} className="mancante">non calcolabile</td>
+                    )}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
 
-            <h3>Cosa serve per vincere</h3>
-            {noi.escluso ? (
-              <p>Servono almeno <b>{n(s.punti_tecnici_mancanti)} punti tecnici</b> in più per superare lo sbarramento.</p>
-            ) : res.posizione === 1 ? (
-              <p>Con questi profili di concorrenti la nostra offerta è già prima.</p>
-            ) : (
-              <>
-                {s.ribasso_minimo_vittoria != null
-                  ? <p>A tecnico invariato, il ribasso minimo per vincere è <b>{n(s.ribasso_minimo_vittoria, 1)}%</b> (oggi {n(noi.ribasso, 1)}%).</p>
-                  : <p>Nessun ribasso fino al 100% basta da solo: bisogna recuperare sul tecnico.</p>}
-                <p>A ribasso invariato, servono <b>{n(s.punti_tecnici_mancanti)} punti tecnici</b> in più.</p>
-              </>
-            )}
+          {risultati.scenari.some((s) => !s.calcolabile) && (
+            <div className="avviso attenzione">
+              <b>La formula del disciplinare non è fra quelle che il simulatore sa calcolare.</b>
+              <p>{risultati.scenari.find((s) => !s.calcolabile)?.motivo}</p>
+              {par?.formula_testo && (
+                <p>Testo del disciplinare: <i>{par.formula_testo}</i></p>
+              )}
+            </div>
+          )}
 
-            <h3>Dettaglio criteri (da dove viene il tecnico)</h3>
-            <table>
-              <thead><tr><th>Criterio</th><th className="num">Punti max</th><th className="num">Resa</th><th className="num">Punti attesi</th><th>Fonte resa</th></tr></thead>
-              <tbody>
-                {Object.entries(noi.dettaglio_criteri).map(([k, v]) => (
-                  <tr key={k}><td>{k}</td><td className="num">{v.punti_max}</td><td className="num">{Math.round(v.resa * 100)}%</td><td className="num">{n(v.punti)}</td><td>{v.fonte}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
-      </div>
+          {risultati.scenari[0]?.calcolabile && (
+            <p className="nota">
+              Ribasso minimo per vincere, a tecnica invariata:{" "}
+              <b>{risultati.scenari[0].ribasso_minimo_vittoria ?? "non raggiungibile"}%</b>
+              {risultati.scenari[0].punti_tecnici_mancanti > 0 &&
+                <> · oppure {risultati.scenari[0].punti_tecnici_mancanti} punti tecnici in più.</>}
+            </p>
+          )}
+
+          <div className="azioni">
+            <button className="btn primario" disabled={inCorso === "analisi"} onClick={analisiCompleta}>
+              {inCorso === "analisi" ? "Analizzo…" : "Analisi completa"}
+            </button>
+            <span className="nota">l'unica parte affidata all'AI: commenta questi numeri, non li rifà</span>
+          </div>
+        </>
+      )}
+
+      {/* ---------- analisi salvate ---------- */}
+      {analisi.length > 0 && (
+        <>
+          <h3>Analisi salvate</h3>
+          <ul className="scad-lista">
+            {analisi.map((a) => (
+              <li key={a.id}>
+                <div className="scad-testo">
+                  <b>{a.quando.replace("T", " ").slice(0, 16)}</b>
+                  <div className="nota">{(a.testo || "").slice(0, 110)}…</div>
+                </div>
+                <div className="scad-azioni">
+                  <button className="btn piccolo" onClick={async () => setAnalisiAperta(await api.leggiAnalisi(garaId, a.id))}>Leggi</button>
+                  <button className="btn piccolo pericolo" onClick={() => cancellaAnalisi(a.id)}>×</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {analisiAperta && (
+        <div className="modale-sfondo" onClick={() => setAnalisiAperta(null)}>
+          <div className="modale largo" onClick={(e) => e.stopPropagation()}>
+            <h3>Analisi del {analisiAperta.quando.replace("T", " ").slice(0, 16)}</h3>
+            <div className="md">{analisiAperta.testo}</div>
+            <div className="azioni"><button className="btn" onClick={() => setAnalisiAperta(null)}>Chiudi</button></div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,27 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, auth } from "./lib/api.js";
 import Accesso from "./components/Accesso.jsx";
+import SchedaGara from "./components/SchedaGara.jsx";
+import CCNL from "./components/CCNL.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
-import Scadenze, { VistaMese } from "./components/Scadenze.jsx";
+import Calendario from "./components/Calendario.jsx";
 import Simulatore from "./components/Simulatore.jsx";
-import Tracker from "./components/Tracker.jsx";
 import Archivio from "./components/Archivio.jsx";
-import Documenti from "./components/Documenti.jsx";
 import Impostazioni from "./components/Impostazioni.jsx";
 
+// Il menu segue il flusso di una gara, dall'alto in basso:
+//   Da decidere -> In lavorazione -> Conclusa -> Archiviata
+// Gli archivi stanno sotto, le impostazioni in fondo.
+// Il Tracker non c'e' piu'; i documenti stanno dentro la scheda di ogni gara,
+// quindi non serve piu' nemmeno un "Archivio documenti" separato.
 const SEZIONI = [
   { id: "home", label: "Home" },
-  { id: "lavorazione", label: "Gare in lavorazione" },
-  { id: "concluse", label: "Gare concluse" },
-  { id: "calendario", label: "Calendario" },
-  { gruppo: "Archivi" },
-  { id: "archivio", label: "Archivio gare" },
-  { id: "documenti", label: "Archivio documenti" },
-  { gruppo: "Strumenti" },
-  { id: "simulatore", label: "Simulatore" },
-  { id: "tracker", label: "Tracker rese" },
-  { id: "impostazioni", label: "Impostazioni" },
+  { id: "da-decidere", label: "Da decidere", stato: "Da decidere" },
+  { id: "lavorazione", label: "In lavorazione", stato: "In lavorazione" },
+  { id: "concluse", label: "Concluse", stato: "Conclusa" },
+  { gruppo: "Archivio" },
+  { id: "arch-sociale", label: "Sociale", archivio: "Sociale" },
+  { id: "arch-cultura", label: "Cultura", archivio: "Cultura" },
+  { id: "arch-educativi", label: "Servizi educativi", archivio: "Servizi_educativi" },
+  { id: "arch-ccnl", label: "CCNL", archivio: "CCNL" },
+  { id: "impostazioni", label: "Impostazioni", piccolo: true },
 ];
 
 export default function App() {
@@ -37,7 +41,6 @@ export default function App() {
   const [elencoGare, setElencoGare] = useState([]);
   const [versione, setVersione] = useState(0);       // incrementa per far ricaricare elenchi e scadenze
   const [modello, setModello] = useState("");
-  const [prefill, setPrefill] = useState(null);      // dati per il simulatore dalla gara
   const [apriNuova, setApriNuova] = useState(false);
 
   // Se il backend rifiuta la password (scaduta, cambiata) si torna all'accesso.
@@ -68,7 +71,8 @@ export default function App() {
   const apriGara = useCallback((id) => { setGaraId(id); setSezione("home"); window.scrollTo({ top: 0 }); }, []);
   const garaCorrente = elencoGare.find((g) => g.id === garaId);
 
-  const onSimula = (dati) => { setPrefill({ ...dati }); setSezione("home"); setTimeout(() => document.getElementById("simulatore")?.scrollIntoView({ behavior: "smooth" }), 50); };
+  // Il simulatore legge i parametri dalla scheda della gara aperta: basta aprirla.
+  const onSimula = () => { setSezione("home"); setTimeout(() => document.getElementById("simulatore")?.scrollIntoView({ behavior: "smooth" }), 50); };
 
   const assistente = (
     <AssistenteGara
@@ -77,22 +81,33 @@ export default function App() {
     />
   );
 
-  const centro = {
-    home: (
-      <>
-        {assistente}
-        <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={8} />
-      </>
-    ),
-    lavorazione: <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} />,
-    concluse: <GareInLavorazione concluse garaCorrente={garaId} onApri={apriGara} versione={versione} titolo="Gare concluse" />,
-    calendario: <div className="riquadro"><h2>Calendario scadenze</h2><VistaMese onApri={apriGara} /></div>,
-    archivio: <Archivio />,
-    documenti: <Documenti onApri={apriGara} versione={versione} />,
-    simulatore: <Simulatore prefill={prefill} garaTitolo={garaCorrente?.titolo} />,
-    tracker: <Tracker />,
-    impostazioni: <Impostazioni salute={salute} modello={modello} setModello={setModello} costanti={costanti} />,
-  }[sezione];
+  const voce = SEZIONI.find((s) => s.id === sezione);
+
+  const centro = voce?.stato ? (
+    <GareInLavorazione
+      stato={voce.stato} titolo={voce.label} garaCorrente={garaId}
+      onApri={apriGara} versione={versione}
+      stati={costanti?.stati} onCambiata={ricarica}
+    />
+  ) : voce?.archivio === "CCNL" ? (
+    <CCNL />
+  ) : voce?.archivio ? (
+    <Archivio archivio={voce.archivio} />
+  ) : sezione === "impostazioni" ? (
+    <Impostazioni salute={salute} modello={modello} setModello={setModello} costanti={costanti} />
+  ) : garaId ? (
+    // Con una gara aperta la colonna centrale è il suo assistente.
+    <>
+      {assistente}
+      <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={6} />
+    </>
+  ) : (
+    // Senza gara aperta la Home è il posto dove se ne crea una.
+    <>
+      <SchedaGara onCreata={(g) => { ricarica(); apriGara(g.id); }} />
+      <GareInLavorazione garaCorrente={garaId} onApri={apriGara} versione={versione} limite={6} />
+    </>
+  );
 
   if (!entrato) {
     // Il backend non risponde: senza sapere se serve la password non si può
@@ -133,10 +148,11 @@ export default function App() {
 
       <div className="dashboard">
         <nav className="nav" aria-label="Sezioni">
-          <button className="btn primario nuova" onClick={() => { setSezione("home"); setApriNuova(true); }}>+ Nuova gara</button>
+          <button className="btn primario nuova" onClick={() => { setGaraId(null); setSezione("home"); }}>+ Nuova gara</button>
           {SEZIONI.map((s, i) => s.gruppo
             ? <div key={i} className="gruppo">{s.gruppo}</div>
-            : <button key={s.id} aria-current={sezione === s.id} onClick={() => setSezione(s.id)}>{s.label}</button>)}
+            : <button key={s.id} className={s.piccolo ? "voce-piccola" : undefined}
+                      aria-current={sezione === s.id} onClick={() => setSezione(s.id)}>{s.label}</button>)}
           {garaCorrente && sezione !== "home" && (
             <>
               <div className="gruppo">Gara aperta</div>
@@ -148,11 +164,11 @@ export default function App() {
         <main className="col-centro">{centro}</main>
 
         <aside className="col-destra">
-          <Scadenze onApri={apriGara} versione={versione} costanti={costanti} onCreata={(g) => { ricarica(); apriGara(g.id); }} />
-          {sezione !== "simulatore" && (
+          <Calendario onApri={apriGara} versione={versione} />
+          {(
             <div className="riquadro compatto" id="simulatore">
               <h2>Simulatore<small>{garaCorrente ? `gara: ${garaCorrente.titolo}` : "nessuna gara aperta"}</small></h2>
-              <Simulatore prefill={prefill} garaTitolo={garaCorrente?.titolo} />
+              <Simulatore elencoGare={elencoGare} garaId={garaId} onSelezionaGara={setGaraId} />
             </div>
           )}
         </aside>

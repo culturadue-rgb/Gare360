@@ -2,6 +2,9 @@
 // VITE_API_URL: URL del backend (Render). Vuoto in sviluppo => proxy di Vite su /api.
 const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
+// Serve ai link di scaricamento diretto, che non passano da fetch.
+export const BASE_API = BASE;
+
 // --- Password condivisa ----------------------------------------------------
 // Resta nella scheda del browser (sessionStorage): chiudendo la scheda va via,
 // e non viene mai scritta su disco. Viaggia a ogni richiesta nell'intestazione
@@ -63,14 +66,18 @@ export const api = {
   health: () => call("/api/health"),
   simula: (payload) => call("/api/simula", { method: "POST", body: json(payload) }),
 
-  tracker: () => call("/api/tracker"),
-  salvaTracker: (righe) => call("/api/tracker", { method: "PUT", body: json(righe) }),
-  trackerRaw: () => call("/api/tracker/raw"),
-  salvaTrackerRaw: (testo) => call("/api/tracker/raw", { method: "PUT", body: json({ testo }) }),
-
   archivio: () => call("/api/archivio"),
   salvaArchivioRaw: (testo) => call("/api/archivio/raw", { method: "PUT", body: json({ testo }) }),
   aggiungiScheda: (scheda) => call("/api/archivio/schede", { method: "POST", body: json(scheda) }),
+
+  // --- Archivi storici (Sociale, Cultura, Servizi educativi) ---
+  archivi: () => call("/api/archivi"),
+  archivioRighe: (nome, filtri = {}) => call(`/api/archivi/${encodeURIComponent(nome)}` + qs(filtri)),
+  archivioFiltri: (nome) => call(`/api/archivi/${encodeURIComponent(nome)}/filtri`),
+  archivioAggiungi: (nome, riga) => call(`/api/archivi/${encodeURIComponent(nome)}`, { method: "POST", body: json(riga) }),
+  archivioAggiorna: (nome, id, campi) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "PATCH", body: json(campi) }),
+  archivioElimina: (nome, id) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  importaArchivi: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/archivi-importa", f); },
 
   prompt: () => call("/api/prompt"),
   salvaPrompt: (testo) => call("/api/prompt", { method: "PUT", body: json({ testo }) }),
@@ -110,6 +117,43 @@ Object.assign(api, {
   valutaGara: (id, modello) => call(`/api/gare/${id}/valuta`, { method: "POST", body: json({ modello: modello || null }) }),
   estraiInfo: (id, modello) => call(`/api/gare/${id}/estrai-info`, { method: "POST", body: json({ modello: modello || null }) }),
   estraiSimulatore: (id, modello) => call(`/api/gare/${id}/estrai-simulatore`, { method: "POST", body: json({ modello: modello || null }) }),
+  // --- Scheda di rilevazione ---
+  schedaCampi: () => call("/api/scheda/campi"),
+  estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
+  controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
+
+  // --- Archivio CCNL ---
+  ccnl: (contratto) => call("/api/ccnl" + qs(contratto ? { contratto } : {})),
+  caricaCCNL: (contratto, file, meta) => {
+    const f = new FormData(); f.append("file", file);
+    Object.entries(meta || {}).forEach(([k, v]) => f.append(k, v ?? ""));
+    return upload(`/api/ccnl/${encodeURIComponent(contratto)}/documenti`, f);
+  },
+  aggiornaCCNL: (id, campi) => call(`/api/ccnl/documenti/${id}`, { method: "PATCH", body: json(campi) }),
+  eliminaCCNL: (id) => call(`/api/ccnl/documenti/${id}`, { method: "DELETE" }),
+  chiediCCNL: (corpo) => call("/api/ccnl/chiedi", { method: "POST", body: json(corpo) }),
+
+  // --- Archiviazione di una gara ---
+  precompilaArchivio: (gid) => call(`/api/gare/${gid}/precompila-archivio`),
+  archiviaGara: (gid, corpo) => call(`/api/gare/${gid}/archivia`, { method: "POST", body: json(corpo) }),
+
+  // --- Simulatore e storico ---
+  stimeStoriche: (p = {}) => call("/api/storico/stime" + qs(p)),
+  profiliConcorrenti: (p = {}) => call("/api/storico/concorrenti" + qs(p)),
+  simulaScenari: (corpo) => call("/api/simula/scenari", { method: "POST", body: json(corpo) }),
+  analizzaGara: (gid, corpo) => call(`/api/gare/${gid}/analisi`, { method: "POST", body: json(corpo) }),
+  elencoAnalisi: (gid) => call(`/api/gare/${gid}/analisi`),
+  leggiAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`),
+  eliminaAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`, { method: "DELETE" }),
+
+  // --- Calendario ---
+  calendario: (p = {}) => call("/api/calendario" + qs(p)),
+  aggiungiVoceCalendario: (v) => call("/api/calendario", { method: "POST", body: json(v) }),
+  aggiornaVoceCalendario: (id, campi) => call(`/api/calendario/${id}`, { method: "PATCH", body: json(campi) }),
+  eliminaVoceCalendario: (id) => call(`/api/calendario/${id}`, { method: "DELETE" }),
+  rimuoviScadenzeGara: (gid) => call(`/api/gare/${gid}/scadenze`, { method: "DELETE" }),
+  rigeneraScadenzeGara: (gid) => call(`/api/gare/${gid}/scadenze/rigenera`, { method: "POST" }),
+
   scadenze: (p = {}) => call("/api/scadenze" + qs(p)),
   estraiScadenza: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scadenze/estrai", f); },
   confermaScadenza: (g) => call("/api/scadenze/conferma", { method: "POST", body: json(g) }),

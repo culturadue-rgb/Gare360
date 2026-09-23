@@ -20,13 +20,36 @@ import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import scheda as mod_scheda
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", Path(__file__).parent / "data"))
 GARE_DIR = DATA_DIR / "gare"
 
 MEMORIA_GIORNI = 15
 SETTORI = ["Cultura", "Sociale", "Altro"]
-STATI = ["Da valutare", "In analisi", "GO", "NO GO", "In preparazione", "Presentata", "Archiviata"]
-STATI_CONCLUSI = {"Presentata", "Archiviata", "NO GO"}
+# Il flusso di una gara, in ordine. Si va avanti un passo per volta e si puo'
+# sempre tornare indietro.
+STATO_INIZIALE = "Da decidere"
+STATI = ["Da decidere", "In lavorazione", "Conclusa", "Archiviata"]
+
+# "Conclusa" e "Archiviata" non hanno piu' scadenze da rispettare: spariscono
+# dal calendario e dagli avvisi di urgenza.
+STATI_CONCLUSI = {"Conclusa", "Archiviata"}
+
+# Conversione dagli stati vecchi. Serve una volta sola, alla prima lettura di
+# ogni gara salvata prima del cambio.
+CONVERSIONE_STATI = {
+    "Da valutare": "Da decidere",
+    "In analisi": "Da decidere",
+    "GO": "In lavorazione",
+    "In preparazione": "In lavorazione",
+    # Tutto cio' che era gia' chiuso finisce in Archiviata: sono gare su cui non
+    # si lavora piu'. "Conclusa" resta uno stato del flusso, ma ci si arriva solo
+    # da qui in avanti, non per conversione.
+    "NO GO": "Archiviata",
+    "Presentata": "Archiviata",
+    "Archiviata": "Archiviata",
+}
 CATEGORIE_DOC = ["bando", "disciplinare", "capitolato", "criteri di valutazione", "allegato tecnico",
                  "chiarimenti", "documento economico", "documento amministrativo", "bozza interna", "altro"]
 MAX_CHARS_DOC = 60_000        # testo tenuto per documento
@@ -45,6 +68,18 @@ def _dir(gid: str) -> Path:
     return GARE_DIR / gid
 
 
+def converti_stato(stato: str | None) -> str:
+    """
+    Riporta uno stato al nuovo flusso. Uno stato gia' nuovo resta com'e'; uno
+    vecchio viene tradotto; uno sconosciuto torna all'inizio invece di far
+    sparire la gara dagli elenchi.
+    """
+    s = (stato or "").strip()
+    if s in STATI:
+        return s
+    return CONVERSIONE_STATI.get(s, STATO_INIZIALE)
+
+
 def _carica_raw(gid: str) -> dict:
     p = _dir(gid) / "gara.json"
     if not p.exists():
@@ -60,14 +95,15 @@ def _salva(g: dict) -> dict:
 
 
 def crea(titolo: str, ente: str = "", settore: str = "Altro", scadenza: str | None = None,
-         note: str = "", base_asta: float | None = None) -> dict:
+         note: str = "", base_asta: float | None = None,
+         scheda: dict | None = None, criteri: dict | None = None) -> dict:
     g = {
         "id": uuid.uuid4().hex[:10],
         "titolo": titolo.strip(),
         "ente": ente.strip(),
         "settore": settore if settore in SETTORI else "Altro",
         "scadenza": scadenza or None,
-        "stato": "Da valutare",
+        "stato": STATO_INIZIALE,
         "note": note,
         "base_asta": base_asta,
         "creata": _now(),
@@ -79,6 +115,10 @@ def crea(titolo: str, ente: str = "", settore: str = "Altro", scadenza: str | No
         "valutazione": None,
         "dati_simulatore": None,
         "info_estratte": None,
+        # La scheda di rilevazione e le modalita' di punteggio: compilate a mano
+        # o proposte dall'AI, sempre correggibili.
+        "scheda": mod_scheda.normalizza_scheda(scheda),
+        "criteri": mod_scheda.normalizza_criteri(criteri),
     }
     return _salva(g)
 
@@ -93,10 +133,20 @@ def aggiorna(gid: str, campi: dict) -> dict:
     for k in ("titolo", "ente", "settore", "scadenza", "stato", "note", "base_asta", "valutazione", "dati_simulatore", "info_estratte"):
         if k in campi and campi[k] is not None or (k in campi and k in ("scadenza", "base_asta")):
             g[k] = campi[k]
+    # Scheda e criteri si FONDONO con quelli gia' salvati: mandare tre campi non
+    # deve cancellare gli altri trentotto. Per svuotare un campo si manda "".
+    if "scheda" in campi:
+        g["scheda"] = {**g.get("scheda", {}), **mod_scheda.normalizza_scheda(campi["scheda"])}
+    if "criteri" in campi:
+        nuovi = mod_scheda.normalizza_criteri(campi["criteri"])
+        # L'elenco dei criteri si sostituisce solo se ne arriva uno: altrimenti
+        # una modifica ai soli pesi lo azzererebbe.
+        if not campi["criteri"].get("elenco"):
+            nuovi["elenco"] = g.get("criteri", {}).get("elenco", [])
+        g["criteri"] = {**g.get("criteri", {}), **nuovi}
     if g["settore"] not in SETTORI:
         g["settore"] = "Altro"
-    if g["stato"] not in STATI:
-        g["stato"] = "Da valutare"
+    g["stato"] = converti_stato(g["stato"])
     g["aggiornata"] = _now()
     return _salva(g)
 
@@ -118,6 +168,10 @@ def tocca(g: dict) -> dict:
 
 def _controlla_memoria(g: dict) -> dict:
     """Se sono passati più di MEMORIA_GIORNI dall'ultima attività, archivia la memoria."""
+    # Una gara salvata col flusso vecchio viene tradotta qui, alla prima lettura.
+    g["stato"] = converti_stato(g.get("stato"))
+    g.setdefault("scheda", mod_scheda.scheda_vuota())
+    g.setdefault("criteri", mod_scheda.criteri_vuoti() | {"elenco": []})
     if g.get("memoria_attiva"):
         ultima = datetime.fromisoformat(g.get("ultima_attivita") or g["creata"])
         if datetime.now() - ultima > timedelta(days=MEMORIA_GIORNI):
@@ -405,3 +459,58 @@ def estrai_scadenza_euristica(testo: str, nome_file: str = "") -> dict:
 
     return {"titolo": titolo, "ente": ente, "data_scadenza": data, "ora_scadenza": ora, "settore": settore,
             "base_asta": None, "note": "", "fonte": "euristica"}
+
+
+# ---------------------------------------------------------------------------
+# Analisi strategiche salvate
+# ---------------------------------------------------------------------------
+# Ogni analisi completa finisce nella cartella della gara, con data e ora nel
+# nome. Si possono rileggere e cancellare: sono documenti, non stati dell'app.
+
+def _dir_analisi(gid: str) -> Path:
+    d = _dir(gid) / "analisi"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def salva_analisi(gid: str, testo: str, contesto: dict | None = None) -> dict:
+    quando = datetime.now().replace(microsecond=0)
+    voce = {
+        "id": quando.strftime("%Y%m%d-%H%M%S"),
+        "quando": quando.isoformat(),
+        "testo": testo,
+        "contesto": contesto or {},
+    }
+    (_dir_analisi(gid) / f"{voce['id']}.json").write_text(
+        json.dumps(voce, ensure_ascii=False, indent=2), encoding="utf-8")
+    return voce
+
+
+def elenco_analisi(gid: str, con_testo: bool = False) -> list[dict]:
+    d = _dir(gid) / "analisi"
+    if not d.exists():
+        return []
+    fuori = []
+    for f in sorted(d.glob("*.json"), reverse=True):
+        try:
+            v = json.loads(f.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not con_testo:
+            v = {**v, "testo": v.get("testo", "")[:300], "troncata": len(v.get("testo", "")) > 300}
+        fuori.append(v)
+    return fuori
+
+
+def leggi_analisi(gid: str, id_analisi: str) -> dict:
+    f = _dir(gid) / "analisi" / f"{id_analisi}.json"
+    if not f.exists():
+        raise KeyError(id_analisi)
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def elimina_analisi(gid: str, id_analisi: str) -> None:
+    f = _dir(gid) / "analisi" / f"{id_analisi}.json"
+    if not f.exists():
+        raise KeyError(id_analisi)
+    f.unlink()

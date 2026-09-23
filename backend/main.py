@@ -1,11 +1,11 @@
 """
-Backend FastAPI — espone come API le funzioni di simulator, tracker, archive, chatbot.
+Backend FastAPI — espone come API le funzioni di simulator, archivio, archive, chatbot.
 
 Variabili d'ambiente:
   ANTHROPIC_API_KEY  chiave per l'assistente (obbligatoria solo per /api/chat)
   STRATEGA_MODEL     modello di default (opzionale)
   ALLOWED_ORIGINS    origini CORS separate da virgola (es. https://tuo-frontend.vercel.app)
-  DATA_DIR           cartella con storico-gare.md e tracker.csv (default: ./data)
+  DATA_DIR           cartella dei dati locali: archivio Excel, gare, documenti
   PROMPTS_DIR        cartella del prompt di sistema (default: ./prompts)
 
 Avvio locale:  uvicorn main:app --reload
@@ -23,8 +23,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import archive
+import archivio as arch
+import calendario as cal
+import ccnl as mod_ccnl
 import chatbot
-import tracker as trk
+import drive
+import scheda as mod_scheda
+import storico
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
 # La documentazione automatica (/docs) elenca tutti i comandi dell'API: in
@@ -137,14 +142,6 @@ class SimulaIn(BaseModel):
     concorrenti: list[ConcorrenteIn] = []
 
 
-class RigaTracker(BaseModel):
-    criterio: str
-    tipo: Literal["tabellare", "qualitativo"] = "qualitativo"
-    resa: float = Field(ge=0, le=1)
-    n: int = 0
-    note: str = ""
-
-
 class TestoIn(BaseModel):
     testo: str
 
@@ -200,7 +197,8 @@ class ChatIn(BaseModel):
 def health():
     return {"ok": True, "chiave_api_configurata": chatbot.chiave_configurata(),
             "modello_default": chatbot.MODELLO_DEFAULT,
-            "password_configurata": bool(password_configurata())}
+            "password_configurata": bool(password_configurata()),
+            "drive": drive.stato()}
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +215,7 @@ def api_simula(body: SimulaIn):
         soglia_sbarramento=c.soglia_sbarramento, riparametrazione=c.riparametrazione,
     )
     conc = [Concorrente(x.nome, x.livello_tecnico, x.ribasso) for x in body.concorrenti if x.nome.strip()]
-    res = simula(cfg, trk.carica(), body.ribasso_nostro, conc)
+    res = simula(cfg, {}, body.ribasso_nostro, conc)
 
     def off(o):
         return {"nome": o.nome, "tecnico": o.tecnico, "economico": o.economico, "ribasso": o.ribasso,
@@ -232,36 +230,6 @@ def api_simula(body: SimulaIn):
         "sensibilita": res["sensibilita"],
         "somma_criteri": sum(x.punti_max for x in cfg.criteri),
     }
-
-
-# ---------------------------------------------------------------------------
-# Tracker
-# ---------------------------------------------------------------------------
-
-@app.get("/api/tracker")
-def api_tracker():
-    return {"righe": trk.leggi_righe()}
-
-
-@app.put("/api/tracker")
-def api_tracker_salva(righe: list[RigaTracker]):
-    pulite = [r.model_dump() for r in righe if r.criterio.strip()]
-    trk.scrivi_righe(pulite)
-    return {"righe": trk.leggi_righe()}
-
-
-@app.get("/api/tracker/raw")
-def api_tracker_raw():
-    return {"testo": trk.leggi_testo()}
-
-
-@app.put("/api/tracker/raw")
-def api_tracker_raw_salva(body: TestoIn):
-    err = trk.valida_testo(body.testo)
-    if err:
-        raise HTTPException(400, err)
-    trk.salva_testo(body.testo)
-    return {"righe": trk.leggi_righe()}
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +262,80 @@ def api_archivio_aggiungi(s: SchedaIn):
 
 
 # ---------------------------------------------------------------------------
+# Archivi storici: Sociale, Cultura, Servizi educativi
+# ---------------------------------------------------------------------------
+# Tre archivi con le stesse 34 colonne. Ogni riga e' modificabile e
+# cancellabile; la conferma prima di cancellare la chiede il frontend.
+
+from fastapi import Body  # noqa: E402
+
+
+def _archivio_valido(nome: str) -> str:
+    if nome not in arch.ARCHIVI:
+        raise HTTPException(404, f"Archivio «{nome}» inesistente. Validi: {', '.join(arch.ARCHIVI)}.")
+    return nome
+
+
+def _proteggi(fn, *a, **kw):
+    """Traduce gli errori dell'archivio in risposte leggibili dall'utente."""
+    try:
+        return fn(*a, **kw)
+    except arch.ErroreArchivio as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/archivi")
+def api_archivi():
+    """Elenco degli archivi, con quante gare contengono e da dove vengono letti."""
+    return {"archivi": arch.ARCHIVI, "colonne": arch.COLONNE, "stato": arch.stato(),
+            "esiti": arch.ESITI, "stati_gara": arch.STATI_GARA}
+
+
+@app.get("/api/archivi/{nome}")
+def api_archivio_righe(nome: str, testo: str = "", regione: str = "", esito: str = "", anno: str = ""):
+    _archivio_valido(nome)
+    righe = _proteggi(arch.cerca, nome, testo=testo, regione=regione, esito=esito, anno=anno)
+    return {"archivio": nome, "colonne": arch.COLONNE, "righe": righe, "totale": len(righe)}
+
+
+@app.get("/api/archivi/{nome}/filtri")
+def api_archivio_filtri(nome: str):
+    _archivio_valido(nome)
+    return _proteggi(arch.valori_filtri, nome)
+
+
+@app.post("/api/archivi/{nome}")
+def api_archivio_aggiungi(nome: str, riga: dict = Body(...)):
+    _archivio_valido(nome)
+    return _proteggi(arch.aggiungi, nome, riga)
+
+
+@app.patch("/api/archivi/{nome}/{id_gara}")
+def api_archivio_aggiorna(nome: str, id_gara: str, campi: dict = Body(...)):
+    _archivio_valido(nome)
+    return _proteggi(arch.aggiorna, nome, id_gara, campi)
+
+
+@app.delete("/api/archivi/{nome}/{id_gara}")
+def api_archivio_elimina(nome: str, id_gara: str):
+    _archivio_valido(nome)
+    _proteggi(arch.elimina, nome, id_gara)
+    return {"ok": True}
+
+
+@app.get("/api/archivi-esporta")
+def api_archivi_esporta():
+    """Scarica tutti e tre gli archivi in un Excel: e' la copia di sicurezza."""
+    from fastapi.responses import Response
+    dati = _proteggi(arch.esporta_excel)
+    return Response(
+        dati,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Archivio_Gare360_unificato.xlsx"'},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Assistente
 # ---------------------------------------------------------------------------
 
@@ -312,7 +354,7 @@ def api_prompt_salva(body: TestoIn):
 def api_chat(body: ChatIn):
     if not body.messaggi or body.messaggi[-1].role != "user":
         raise HTTPException(400, "L'ultimo messaggio deve essere dell'utente.")
-    system = chatbot.costruisci_system(archive.leggi_testo(), trk.carica(), body.includi_contesto)
+    system = chatbot.costruisci_system(archive.leggi_testo(), {}, body.includi_contesto)
     try:
         testo = chatbot.rispondi([m.model_dump() for m in body.messaggi], system, body.modello)
     except Exception as e:  # noqa: BLE001
@@ -336,9 +378,13 @@ class GaraIn(BaseModel):
     scadenza: Optional[str] = None      # ISO "YYYY-MM-DDTHH:MM"
     note: str = ""
     base_asta: Optional[float] = None
+    scheda: Optional[dict] = None
+    criteri: Optional[dict] = None
 
 
 class GaraPatch(BaseModel):
+    scheda: Optional[dict] = None
+    criteri: Optional[dict] = None
     titolo: Optional[str] = None
     ente: Optional[str] = None
     settore: Optional[str] = None
@@ -374,7 +420,8 @@ def api_gare_elenco(settore: Optional[str] = None, stato: Optional[str] = None, 
 def api_gare_crea(body: GaraIn):
     if not body.titolo.strip():
         raise HTTPException(400, "Il titolo è obbligatorio.")
-    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note, body.base_asta)
+    return gare.crea(body.titolo, body.ente, body.settore, body.scadenza, body.note,
+                     body.base_asta, body.scheda, body.criteri)
 
 
 @app.get("/api/gare/{gid}")
@@ -387,10 +434,44 @@ def api_gara(gid: str):
 
 @app.patch("/api/gare/{gid}")
 def api_gara_aggiorna(gid: str, body: GaraPatch):
+    campi = body.model_dump(exclude_unset=True)
     try:
-        return gare.aggiorna(gid, body.model_dump(exclude_unset=True))
+        prima = gare.carica(gid)["stato"]
+        g = gare.aggiorna(gid, campi)
     except KeyError:
         raise HTTPException(404, "Gara non trovata.")
+
+    dopo = g["stato"]
+    calendario_info = None
+
+    # Entrando in lavorazione le date della scheda diventano voci di calendario.
+    if prima != dopo and dopo == "In lavorazione":
+        calendario_info = {"azione": "generate", **cal.genera_da_gara(g)}
+
+    # Tornando indietro NON si cancella nulla di testa propria: si segnala
+    # quante voci ci sono, così il frontend puo' chiedere se toglierle.
+    elif prima == "In lavorazione" and dopo == "Da decidere":
+        n = cal.conta_di_gara(gid)
+        if n:
+            calendario_info = {"azione": "chiedi_rimozione", "voci": n}
+
+    return {**g, "calendario": calendario_info} if calendario_info else g
+
+
+@app.delete("/api/gare/{gid}/scadenze")
+def api_gara_scadenze_rimuovi(gid: str):
+    """Toglie dal calendario tutte le scadenze di una gara. Lo chiede l'utente."""
+    return {"rimosse": cal.elimina_di_gara(gid)}
+
+
+@app.post("/api/gare/{gid}/scadenze/rigenera")
+def api_gara_scadenze_rigenera(gid: str):
+    """Rilegge le date dalla scheda. Non tocca le voci corrette a mano."""
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    return cal.genera_da_gara(g)
 
 
 @app.delete("/api/gare/{gid}")
@@ -441,7 +522,7 @@ def api_documenti_tutti():
 # --- Assistente sulla gara ------------------------------------------------------
 
 def _system_per(g: dict) -> str:
-    return chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), trk.carica())
+    return chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), {})
 
 
 @app.post("/api/gare/{gid}/chat")
@@ -528,8 +609,412 @@ def api_gara_estrai_simulatore(gid: str, body: ModelloIn = ModelloIn()):
 
 # --- Scadenze / calendario -------------------------------------------------------
 
+@app.post("/api/archivi-importa")
+async def api_archivi_importa(file: UploadFile = File(...)):
+    """Carica il file Excel dell'archivio. Rifiuta il file se le colonne non tornano."""
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        conteggi = arch.importa_excel(dati)
+    except arch.ErroreArchivio as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True, "gare_per_archivio": conteggi}
+
+
+# --- Archivio CCNL ----------------------------------------------------------
+
+@app.get("/api/ccnl")
+def api_ccnl_elenco(contratto: Optional[str] = None):
+    return {"contratti": mod_ccnl.CONTRATTI, "tipi_documento": mod_ccnl.TIPI_DOCUMENTO,
+            "documenti": mod_ccnl.elenco(contratto)}
+
+
+@app.post("/api/ccnl/{contratto}/documenti")
+async def api_ccnl_carica(contratto: str, file: UploadFile = File(...),
+                          tipo_documento: str = Form("altro"),
+                          data_sottoscrizione: str = Form(""),
+                          validita_da: str = Form(""), validita_a: str = Form("")):
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        return mod_ccnl.aggiungi_documento(contratto, file.filename or "documento.pdf", dati, {
+            "tipo_documento": tipo_documento, "data_sottoscrizione": data_sottoscrizione,
+            "validita_da": validita_da, "validita_a": validita_a})
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.patch("/api/ccnl/documenti/{id_doc}")
+def api_ccnl_aggiorna(id_doc: str, campi: dict = Body(...)):
+    try:
+        return mod_ccnl.aggiorna_documento(id_doc, campi)
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(404, str(e)) from e
+
+
+@app.delete("/api/ccnl/documenti/{id_doc}")
+def api_ccnl_elimina(id_doc: str):
+    try:
+        mod_ccnl.elimina_documento(id_doc)
+    except mod_ccnl.ErroreCCNL as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
+class DomandaCCNL(BaseModel):
+    domanda: str
+    contratto: Optional[str] = None
+    modello: Optional[str] = None
+
+
+@app.post("/api/ccnl/chiedi")
+def api_ccnl_chiedi(body: DomandaCCNL):
+    """
+    Consultazione sui soli documenti caricati.
+
+    Prima si cercano i passaggi pertinenti nel testo indicizzato, poi si chiama
+    il modello con QUEI passaggi soltanto e temperatura 0. Infine il codice
+    verifica che ogni citazione corrisponda davvero a un passaggio fornito: le
+    citazioni inventate vengono marcate e segnalate.
+    """
+    if not body.domanda.strip():
+        raise HTTPException(400, "Scrivi una domanda.")
+
+    passaggi = mod_ccnl.cerca_passaggi(body.domanda, body.contratto)
+    if not passaggi:
+        return {"risposta": "Non presente nei documenti caricati.", "passaggi": [],
+                "problemi": [], "nessun_passaggio": True}
+
+    if not chatbot.chiave_configurata():
+        raise HTTPException(503, "L'assistente non e' configurato: manca ANTHROPIC_API_KEY.")
+
+    system = mod_ccnl.istruzioni(passaggi)
+    try:
+        risposta = chatbot.chiama(system, [{"role": "user", "content": body.domanda}],
+                                  body.modello, max_tokens=2000, temperatura=0)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Consultazione non riuscita: {e}") from e
+
+    risposta, problemi = mod_ccnl.verifica_citazioni(risposta, passaggi)
+    return {"risposta": risposta, "passaggi": passaggi, "problemi": problemi,
+            "nessun_passaggio": False}
+
+
+# --- Archiviazione di una gara ---------------------------------------------
+# Passare una gara ad "Archiviata" non e' un cambio di stato qualsiasi: significa
+# aggiungerla all'archivio storico, cioe' alla memoria su cui il simulatore
+# ragionera' per tutte le gare future. Per questo si apre un modulo con tutte e
+# 34 le colonne, precompilato con quello che gia' si sa, e si archivia solo dopo
+# conferma.
+
+def _id_archivio(g: dict) -> str:
+    """Un codice breve a partire dal titolo, da correggere se non piace."""
+    import re as _re
+    parole = _re.findall(r"[A-Za-zÀ-ÿ]{3,}", g.get("titolo", "") or "gara")
+    sigla = "".join(p[:3].upper() for p in parole[:2]) or "GARA"
+    anno = (g.get("creata") or "")[:4] or ""
+    return f"{sigla}{anno[-2:]}"
+
+
+@app.get("/api/gare/{gid}/precompila-archivio")
+def api_gara_precompila(gid: str):
+    """
+    Il modulo di archiviazione, gia' riempito con quello che l'app sa.
+    I campi che solo una persona puo' sapere (esito, punteggi, concorrenti,
+    ore di lavoro) restano vuoti: sono proprio quelli che rendono utile
+    l'archivio, e inventarli lo renderebbe dannoso.
+    """
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+
+    sched = g.get("scheda") or {}
+    crit = g.get("criteri") or {}
+    riga = {c: "" for c in arch.COLONNE}
+    riga.update({
+        "id_gara": _id_archivio(g),
+        "cig": sched.get("cig", ""),
+        "stazione_appaltante": g.get("ente", "") or sched.get("ente", ""),
+        "titolo_gara": sched.get("servizio", "") or g.get("titolo", ""),
+        "settore": g.get("settore", ""),
+        "scadenza_gara": sched.get("scadenza_offerte", ""),
+        "stato_gara": "Chiusa",
+        "note": sched.get("note", ""),
+        "base_asta": sched.get("base_asta", "") or (g.get("base_asta") or ""),
+        "max_punteggio_tecnico": crit.get("peso_tecnico", ""),
+        "max_punteggio_economico": crit.get("peso_economico", ""),
+        "data_segnalazione": sched.get("data_segnalazione", ""),
+        "uscente": sched.get("siamo_uscenti", ""),
+        "origine_dato": "Form app",
+    })
+
+    return {
+        "riga": riga,
+        "colonne": arch.COLONNE,
+        "archivio_proposto": _archivio_per_settore(g.get("settore", "")),
+        "archivi": arch.ARCHIVI,
+        "esiti": arch.ESITI,
+        "stati_gara": arch.STATI_GARA,
+        "da_completare": ["esito_gara", "punteggio_tecnico", "punteggio_economico",
+                          "punteggio_tecnico_aggiudicatario", "punteggio_economico_aggiudicatario",
+                          "n_concorrenti", "importo_offerto", "ore_lavoro", "regione", "comune"],
+    }
+
+
+class ArchiviaIn(BaseModel):
+    archivio: str
+    riga: dict
+
+
+@app.post("/api/gare/{gid}/archivia")
+def api_gara_archivia(gid: str, body: ArchiviaIn):
+    """Aggiunge la riga all'archivio scelto e solo allora porta la gara ad Archiviata."""
+    try:
+        gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if body.archivio not in arch.ARCHIVI:
+        raise HTTPException(400, f"Archivio «{body.archivio}» inesistente.")
+
+    try:
+        riga = arch.aggiungi(body.archivio, body.riga)
+    except arch.ErroreArchivio as e:
+        # Non si cambia stato se la riga non e' stata scritta: meglio una gara
+        # ancora "Conclusa" che una "Archiviata" senza riga in archivio.
+        raise HTTPException(400, str(e)) from e
+
+    g = gare.aggiorna(gid, {"stato": "Archiviata"})
+    return {"gara": g, "riga": riga, "archivio": body.archivio}
+
+
+# --- Storico e simulatore --------------------------------------------------
+
+@app.get("/api/storico/stime")
+def api_storico_stime(archivio: Optional[str] = None, escludi: str = ""):
+    """
+    Le stime ricavate dagli archivi: resa tecnica, scarto dal vincitore,
+    ribassi, numero di concorrenti. Ogni stima dice su quante gare si basa e
+    quali, così si possono escludere quelle che non c'entrano.
+    """
+    fuori = [x.strip() for x in escludi.split(",") if x.strip()]
+    return storico.stime(archivio, fuori)
+
+
+@app.get("/api/storico/concorrenti")
+def api_storico_concorrenti(archivio: Optional[str] = None, limite: int = 12):
+    """Profili ricavati dalle gare in cui si conosce il punteggio del vincitore."""
+    return {"profili": storico.profili_concorrenti(archivio, limite)}
+
+
+class ScenariIn(BaseModel):
+    config: ConfigIn
+    concorrenti: list[ConcorrenteIn] = []
+    ribassi: list[float] = [3.0, 5.0, 7.0]
+    delta_tecnici: list[float] = []
+    formula_testo: str = ""
+
+
+@app.post("/api/simula/scenari")
+def api_simula_scenari(body: ScenariIn):
+    """Più scenari affiancati. Tutto calcolato dal codice, niente AI."""
+    from simulator import confronto
+    c = body.config
+    cfg = ConfigGara(
+        nome=c.nome, base_asta=c.base_asta, punti_tecnico=c.punti_tecnico,
+        punti_economico=c.punti_economico,
+        criteri=[Criterio(x.nome, x.tipo, x.punti_max, x.resa_override)
+                 for x in c.criteri if x.nome.strip()],
+        formula_prezzo=c.formula_prezzo, coeff_bilineare=c.coeff_bilineare,
+        soglia_sbarramento=c.soglia_sbarramento, riparametrazione=c.riparametrazione,
+        formula_testo=body.formula_testo,
+    )
+    conc = [Concorrente(x.nome, x.livello_tecnico, x.ribasso) for x in body.concorrenti if x.nome.strip()]
+    return confronto(cfg, {}, conc, body.ribassi, body.delta_tecnici)
+
+
+# --- Analisi strategica (AI) ----------------------------------------------
+
+class AnalisiIn(BaseModel):
+    risultati: dict = {}          # quanto calcolato dal simulatore
+    archivio: Optional[str] = None
+    modello: Optional[str] = None
+
+
+@app.post("/api/gare/{gid}/analisi")
+def api_gara_analisi(gid: str, body: AnalisiIn):
+    """
+    L'analisi strategica. Il modello NON ricalcola: riceve i numeri già fatti
+    dal simulatore, la scheda, i documenti e le gare simili, e li commenta.
+    """
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not chatbot.chiave_configurata():
+        raise HTTPException(503, "L'assistente non è configurato: manca ANTHROPIC_API_KEY.")
+
+    archivio_nome = body.archivio or _archivio_per_settore(g.get("settore", ""))
+    dati = {
+        "scheda": g.get("scheda", {}),
+        "criteri": g.get("criteri", {}),
+        "risultati_simulatore": body.risultati,
+        "stime_storiche": storico.stime(archivio_nome),
+        "gare_simili": storico.gare_simili(
+            archivio_nome,
+            testo=g.get("titolo", "") + " " + (g.get("scheda", {}).get("servizio") or ""),
+            regione=(g.get("scheda", {}) or {}).get("regione", "")),
+        "profili_concorrenti": storico.profili_concorrenti(archivio_nome),
+    }
+    system = chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), dati)
+    try:
+        testo = chatbot.chiama(system, [{"role": "user", "content": chatbot.ISTRUZIONI_ANALISI}],
+                               body.modello, max_tokens=8000)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Analisi non riuscita: {e}") from e
+
+    voce = gare.salva_analisi(gid, testo, {"archivio": archivio_nome,
+                                           "scenari": len(body.risultati.get("scenari", []))})
+    gare.tocca(g)
+    return voce
+
+
+def _archivio_per_settore(settore: str) -> str:
+    """Il settore della gara dice in quale archivio cercare i precedenti."""
+    s = (settore or "").strip().lower()
+    if s.startswith("cultur"):
+        return "Cultura"
+    if s.startswith("serviz") or s.startswith("educ"):
+        return "Servizi_educativi"
+    if s.startswith("social"):
+        return "Sociale"
+    return "Cultura"
+
+
+@app.get("/api/gare/{gid}/analisi")
+def api_gara_analisi_elenco(gid: str):
+    return {"analisi": gare.elenco_analisi(gid)}
+
+
+@app.get("/api/gare/{gid}/analisi/{id_analisi}")
+def api_gara_analisi_una(gid: str, id_analisi: str):
+    try:
+        return gare.leggi_analisi(gid, id_analisi)
+    except KeyError:
+        raise HTTPException(404, "Analisi non trovata.")
+
+
+@app.delete("/api/gare/{gid}/analisi/{id_analisi}")
+def api_gara_analisi_elimina(gid: str, id_analisi: str):
+    try:
+        gare.elimina_analisi(gid, id_analisi)
+    except KeyError:
+        raise HTTPException(404, "Analisi non trovata.")
+    return {"ok": True}
+
+
+# --- Scheda di rilevazione -------------------------------------------------
+
+@app.get("/api/scheda/campi")
+def api_scheda_campi():
+    """Definizione del modulo: il frontend lo costruisce da qui, non a mano."""
+    return {"sezioni": mod_scheda.SEZIONI, "campi_criteri": mod_scheda.CAMPI_CRITERI,
+            "colonne_criterio": mod_scheda.COLONNE_CRITERIO,
+            "tipi_criterio": mod_scheda.TIPI_CRITERIO}
+
+
+@app.post("/api/scheda/estrai")
+async def api_scheda_estrai(file: UploadFile = File(...), modello: Optional[str] = Form(None)):
+    """
+    Legge bando o disciplinare e PROPONE i campi della scheda. Non salva nulla:
+    la gara nasce solo quando l'utente conferma, dopo aver corretto.
+    """
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    testo = gare.estrai_testo(file.filename or "documento", dati)
+    if not testo.strip():
+        raise HTTPException(
+            400, "Dal file non si ricava testo: se è una scansione va prima riconosciuta, "
+                 "oppure compila la scheda a mano.")
+    if not chatbot.chiave_configurata():
+        raise HTTPException(
+            503, "L'assistente non è configurato (manca ANTHROPIC_API_KEY): "
+                 "la scheda va compilata a mano.")
+    try:
+        proposta = chatbot.estrai_json(chatbot.ISTRUZIONI_SCHEDA, testo[:120_000], modello)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Estrazione non riuscita: {e}") from e
+
+    criteri = mod_scheda.normalizza_criteri(proposta.get("criteri"))
+    return {
+        "titolo": str(proposta.get("titolo", "")).strip(),
+        "scheda": mod_scheda.normalizza_scheda(proposta.get("scheda")),
+        "criteri": criteri,
+        "avvisi": mod_scheda.controlla(criteri),
+        "nome_file": file.filename,
+        "caratteri_letti": len(testo),
+    }
+
+
+@app.post("/api/criteri/controlla")
+def api_criteri_controlla(criteri: dict = Body(...)):
+    """Avvisi sulle incoerenze dei punteggi. Non blocca: segnala e basta."""
+    norm = mod_scheda.normalizza_criteri(criteri)
+    return {"avvisi": mod_scheda.controlla(norm), "somma_criteri": mod_scheda.somma_criteri(norm)}
+
+
+@app.get("/api/calendario")
+def api_calendario(giorni: int = 30, mese: Optional[str] = None):
+    titoli = {g["id"]: g["titolo"] for g in gare.elenco()}
+    return cal.vista(mese=mese, giorni=giorni, titoli_gare=titoli)
+
+
+class VoceCalendario(BaseModel):
+    id_gara: str = ""
+    tipo: str = "altro"
+    data: str
+    ora: str = ""
+    descrizione: str = ""
+
+
+class VoceCalendarioPatch(BaseModel):
+    tipo: Optional[str] = None
+    data: Optional[str] = None
+    ora: Optional[str] = None
+    descrizione: Optional[str] = None
+
+
+@app.post("/api/calendario")
+def api_calendario_aggiungi(voce: VoceCalendario):
+    try:
+        return cal.aggiungi(voce.model_dump())
+    except cal.ErroreCalendario as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.patch("/api/calendario/{id_evento}")
+def api_calendario_aggiorna(id_evento: str, campi: VoceCalendarioPatch):
+    try:
+        return cal.aggiorna(id_evento, campi.model_dump(exclude_unset=True))
+    except cal.ErroreCalendario as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/calendario/{id_evento}")
+def api_calendario_elimina(id_evento: str):
+    try:
+        cal.elimina(id_evento)
+    except cal.ErroreCalendario as e:
+        raise HTTPException(404, str(e)) from e
+    return {"ok": True}
+
+
 @app.get("/api/scadenze")
 def api_scadenze(giorni: int = 7, mese: Optional[str] = None):
+    """Compatibilità: la vecchia vista per settore, ancora usata dalla colonna destra."""
     return gare.scadenze(giorni=giorni, mese=mese)
 
 

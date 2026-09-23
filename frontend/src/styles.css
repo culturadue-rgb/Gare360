@@ -267,3 +267,140 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .accesso-riquadro input:focus { outline: 2px solid var(--lime); border-color: var(--lime); }
 .nota.piccola { font-size: .8rem; color: var(--grigio); margin: 0; }
 .btn.esci { margin-left: .8rem; padding: .25rem .7rem; font-size: .85rem; }
+
+/* --- Archivi storici ------------------------------------------------------ */
+.archivio-filtri { flex-wrap: wrap; gap: .5rem; align-items: center; }
+.archivio-filtri input[type="search"] { min-width: 15rem; flex: 1 1 15rem; }
+.archivio-filtri input, .archivio-filtri select {
+  padding: .35rem .5rem; border: 1px solid var(--linea);
+  border-radius: var(--raggio); font: inherit;
+}
+
+/* La tabella ha molte colonne: scorre dentro il suo riquadro, non trascina
+   tutta la pagina di lato. */
+.tabella-scorrevole { overflow-x: auto; margin-top: .6rem; }
+.tabella-archivio { border-collapse: collapse; width: 100%; font-size: .87rem; }
+.tabella-archivio th, .tabella-archivio td {
+  padding: .4rem .55rem; border-bottom: 1px solid var(--linea);
+  text-align: left; white-space: nowrap;
+  max-width: 18rem; overflow: hidden; text-overflow: ellipsis;
+}
+.tabella-archivio th { background: var(--blu-tenue); color: var(--blu); font-weight: 600; }
+.tabella-archivio tr.aperta > td { background: var(--lime-tenue); }
+.tabella-archivio .mancante { color: var(--grigio); }
+.tabella-archivio .azioni-riga { white-space: nowrap; }
+
+.scheda-modifica {
+  margin-top: 1rem; padding: 1rem;
+  border: 1px solid var(--linea); border-top: 4px solid var(--lime);
+  border-radius: var(--raggio); background: var(--blu-tenue);
+}
+.scheda-modifica h3 { margin: 0 0 .3rem; color: var(--blu); }
+.griglia-campi {
+  display: grid; gap: .7rem; margin: .8rem 0;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+}
+.griglia-campi .campo { display: flex; flex-direction: column; gap: .2rem; }
+.griglia-campi .campo > span { font-size: .82rem; color: var(--blu); font-weight: 600; }
+.griglia-campi input, .griglia-campi textarea {
+  padding: .4rem .5rem; border: 1px solid var(--linea);
+  border-radius: var(--raggio); font: inherit; background: var(--bianco);
+}
+.griglia-campi input[readonly] { background: var(--blu-tenue); color: var(--grigio); }
+
+.btn.piccolo { padding: .2rem .6rem; font-size: .82rem; }
+.btn.pericolo { background: var(--rosso); color: var(--bianco); border: 0; }
+.btn.pericolo:hover { filter: brightness(.9); }
+.nav .voce-piccola { font-size: .85rem; opacity: .75; margin-top: .4rem; }
+
+/* Un colore per ogni passo del flusso di gara. */
+.stato.decidere    { background: var(--blu-tenue);  color: var(--blu); }
+.stato.lavorazione { background: var(--lime);       color: var(--blu-scuro); }
+.stato.conclusa    { background: var(--blu);        color: var(--bianco); }
+.stato.archiviata  { background: var(--linea);      color: var(--grigio); }
+
+/* --- Scheda di rilevazione ------------------------------------------------ */
+.sezione-scheda {
+  border: 1px solid var(--linea); border-radius: var(--raggio);
+  margin: .7rem 0; background: var(--bianco);
+}
+.sezione-scheda > summary {
+  padding: .6rem .8rem; cursor: pointer; font-weight: 600; color: var(--blu);
+  background: var(--blu-tenue); border-radius: var(--raggio);
+}
+.sezione-scheda[open] > summary { border-radius: var(--raggio) var(--raggio) 0 0; }
+.sezione-scheda > *:not(summary) { padding: 0 .8rem; }
+.sezione-scheda .griglia-campi { padding: .8rem; }
+.sezione-scheda h4 { margin: .8rem .8rem .2rem; color: var(--blu); }
+.sezione-scheda h4 small { font-weight: 400; color: var(--grigio); margin-left: .5rem; }
+.sezione-scheda table input, .sezione-scheda table select {
+  width: 100%; padding: .25rem .35rem; border: 1px solid var(--linea);
+  border-radius: 6px; font: inherit;
+}
+.estrazione { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.avviso.attenzione { border-left: 4px solid var(--lime-scuro); background: var(--lime-tenue); }
+
+/* --- Calendario ----------------------------------------------------------- */
+.cal-testa { display: flex; gap: .3rem; margin-bottom: .5rem; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.cal-intestazione {
+  font-size: .7rem; text-transform: uppercase; color: var(--grigio);
+  text-align: center; padding: .2rem 0;
+}
+.cal-vuoto { min-height: 2.1rem; }
+.cal-giorno {
+  min-height: 2.1rem; border: 1px solid var(--linea); border-radius: 6px;
+  padding: .15rem .25rem; position: relative; background: var(--bianco);
+}
+.cal-giorno .numero { font-size: .72rem; color: var(--grigio); }
+.cal-giorno.oggi { border-color: var(--lime); border-width: 2px; }
+.cal-giorno.con-voci { background: var(--blu-tenue); }
+.pallino { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin: 0 1px; }
+.pallino.scaduta { background: var(--rosso); }
+.pallino.alta    { background: var(--lime-scuro); }
+.pallino.media   { background: var(--blu); }
+.pallino.bassa   { background: var(--linea); }
+
+.scad-lista { list-style: none; padding: 0; margin: .4rem 0; }
+.scad-lista li {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem;
+  padding: .45rem 0; border-bottom: 1px solid var(--linea);
+}
+.scad-lista .tipo {
+  font-size: .72rem; text-transform: uppercase; color: var(--blu);
+  background: var(--blu-tenue); padding: .1rem .35rem; border-radius: 5px;
+}
+.scad-azioni { display: flex; gap: .2rem; flex-shrink: 0; }
+.urg.scaduta { color: var(--rosso); font-weight: 600; }
+.urg.alta    { color: var(--lime-scuro); font-weight: 600; }
+.voce-modifica { width: 100%; background: var(--blu-tenue); padding: .5rem; border-radius: var(--raggio); }
+.voce-modifica .campo { display: flex; flex-direction: column; gap: .15rem; margin-bottom: .35rem; }
+.voce-modifica input, .voce-modifica select {
+  padding: .3rem .4rem; border: 1px solid var(--linea); border-radius: 6px; font: inherit;
+}
+
+/* --- Simulatore ----------------------------------------------------------- */
+.stime { background: var(--blu-tenue); border-radius: var(--raggio); padding: .6rem .8rem; margin: .7rem 0; }
+.stime h3 { margin: 0 0 .3rem; color: var(--blu); font-size: .95rem; }
+.stime h3 small { font-weight: 400; color: var(--grigio); margin-left: .4rem; }
+.stime p { margin: .25rem 0; }
+.gare-usate { list-style: none; padding: .3rem 0 0; margin: 0; font-size: .85rem; }
+.gare-usate li { padding: .12rem 0; }
+.gare-usate label { display: flex; gap: .4rem; align-items: baseline; cursor: pointer; }
+.affidabilita-bassa, .affidabilita-molto-bassa { color: var(--rosso); }
+.modale.largo { max-width: 52rem; max-height: 85vh; overflow-y: auto; }
+.modale.largo .md { white-space: pre-wrap; line-height: 1.55; }
+.cambio-stato {
+  font-size: .78rem; padding: .1rem .3rem; border: 1px solid var(--linea);
+  border-radius: 6px; background: var(--bianco); color: var(--inchiostro);
+}
+
+/* --- Consultazione CCNL --------------------------------------------------- */
+.risposta-ccnl { margin-top: .8rem; }
+.risposta-ccnl .md { white-space: pre-wrap; line-height: 1.55; }
+.passaggio { margin: .6rem 0; }
+.passaggio blockquote {
+  margin: .2rem 0 0; padding: .5rem .7rem; background: var(--blu-tenue);
+  border-left: 3px solid var(--blu); border-radius: 0 var(--raggio) var(--raggio) 0;
+  font-size: .85rem; white-space: pre-wrap; max-height: 14rem; overflow-y: auto;
+}
