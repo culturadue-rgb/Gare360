@@ -9,6 +9,7 @@ import Calendario from "./components/Calendario.jsx";
 import Simulatore from "./components/Simulatore.jsx";
 import Archivio from "./components/Archivio.jsx";
 import Impostazioni from "./components/Impostazioni.jsx";
+import { ASSISTENTE_CLAUDE_URL } from "./components/AssistenteGara.jsx";
 
 // Il menu segue il flusso di una gara, dall'alto in basso:
 //   Da decidere -> In lavorazione -> Conclusa -> Archiviata
@@ -149,6 +150,8 @@ export default function App() {
       <div className="dashboard">
         <nav className="nav" aria-label="Sezioni">
           <button className="btn primario nuova" onClick={() => { setGaraId(null); setSezione("home"); }}>+ Nuova gara</button>
+          <a className="btn nuova" href={ASSISTENTE_CLAUDE_URL} target="_blank" rel="noopener noreferrer"
+             style={{ textAlign: "center", textDecoration: "none" }}>Assistente Gare ↗</a>
           {SEZIONI.map((s, i) => s.gruppo
             ? <div key={i} className="gruppo">{s.gruppo}</div>
             : <button key={s.id} className={s.piccolo ? "voce-piccola" : undefined}

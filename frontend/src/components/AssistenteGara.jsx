@@ -5,7 +5,7 @@ import Modale from "./Modale.jsx";
 import NuovaGara from "./NuovaGara.jsx";
 
 // Assistente su claude.ai: usa l'account Claude di chi lo apre, senza chiave API sul server.
-const ASSISTENTE_CLAUDE_URL = "https://claude.ai/artifact/Lt2Y4Zuu1NsRhLmmSsC6Wm";
+export const ASSISTENTE_CLAUDE_URL = "https://claude.ai/artifact/Lt2Y4Zuu1NsRhLmmSsC6Wm";
 
 // Chat dell'assistente sulla gara selezionata. Senza gara: chat generica (endpoint /api/chat esistente).
 export default function AssistenteGara({ garaId, onSelezionaGara, elencoGare, costanti, salute, modello, onGaraAggiornata, onSimula, apriNuova, setApriNuova }) {
