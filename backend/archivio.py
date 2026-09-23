@@ -273,11 +273,12 @@ class FonteExcel(Fonte):
         if not foglio:
             raise _errore_foglio_mancante(archivio, wb.sheetnames)
         ws = wb[foglio]
-        intestazioni = [_testo(c.value) for c in ws[1]]
+        r_intestazioni = _riga_intestazioni(ws, foglio)
+        intestazioni = [_testo(c.value) for c in ws[r_intestazioni]]
         _verifica_intestazioni(archivio, intestazioni)
 
         righe = []
-        for r in range(2, ws.max_row + 1):
+        for r in range(r_intestazioni + 1, ws.max_row + 1):
             valori = [ws.cell(r, c).value for c in range(1, len(COLONNE) + 1)]
             if not _testo(valori[0]):
                 continue  # riga predisposta ma vuota
@@ -294,8 +295,10 @@ class FonteExcel(Fonte):
             wb.create_sheet(foglio)
             wb[foglio].append(COLONNE)
         ws = wb[foglio]
-        # Si riscrive solo il corpo: l'intestazione resta quella verificata.
-        ws.delete_rows(2, max(ws.max_row - 1, 0))
+        r_intestazioni = _riga_intestazioni(ws, foglio)
+        # Si riscrive solo il corpo: l'intestazione, e l'eventuale titolo che le
+        # sta sopra, restano dove sono.
+        ws.delete_rows(r_intestazioni + 1, max(ws.max_row - r_intestazioni, 0))
         for riga in righe:
             ws.append([riga.get(c, "") for c in COLONNE])
         self.percorso.parent.mkdir(parents=True, exist_ok=True)
@@ -430,6 +433,40 @@ def _errore_foglio_mancante(archivio: str, nomi: list[str]) -> ErroreArchivio:
         f"Nel file Excel non c'e' nessun foglio per l'archivio «{archivio}». "
         f"Fogli presenti: {', '.join(nomi)}. " + coda +
         "Controlla di aver caricato Archivio_Gare360_unificato.xlsx e non un altro file."
+    )
+
+
+RIGHE_INTESTAZIONE = 20     # fin dove si cerca la riga delle intestazioni
+
+
+def _riga_intestazioni(ws, foglio: str) -> int:
+    """
+    In quale riga stanno le intestazioni.
+
+    Quasi sempre la prima, ma un foglio puo' avere sopra un titolo, una riga
+    vuota o una nota, e pretendere la riga 1 significherebbe rifiutare un file
+    giusto per una riga di troppo. Si cerca quindi la prima riga che comincia
+    con "id_gara", entro le prime RIGHE_INTESTAZIONE.
+    """
+    for r in range(1, min(ws.max_row, RIGHE_INTESTAZIONE) + 1):
+        if chiave(_testo(ws.cell(r, 1).value)) == "id_gara":
+            return r
+
+    # Non trovata: meglio dire cosa c'e' davvero nel foglio, perche' quasi
+    # sempre vuol dire che il file caricato non e' l'archivio.
+    visto = "Il foglio e' vuoto. "
+    for r in range(1, min(ws.max_row, RIGHE_INTESTAZIONE) + 1):
+        contenuto = [t for t in (_testo(ws.cell(r, c).value) for c in range(1, 7)) if t]
+        if contenuto:
+            visto = f"La prima riga con qualcosa dentro e' la {r} e contiene: " + \
+                    ", ".join(contenuto) + ". "
+            break
+    raise ErroreArchivio(
+        f"Nel foglio «{foglio}» non trovo la riga delle intestazioni: "
+        f"ho cercato una casella «id_gara» nelle prime {RIGHE_INTESTAZIONE} righe "
+        f"e non c'e'. " + visto +
+        "Quasi sempre questo vuol dire che il file caricato non e' "
+        "Archivio_Gare360_unificato.xlsx ma un altro foglio di calcolo."
     )
 
 
