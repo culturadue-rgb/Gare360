@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "./lib/api.js";
+import { api, auth } from "./lib/api.js";
+import Accesso from "./components/Accesso.jsx";
 import AssistenteGara from "./components/AssistenteGara.jsx";
 import GareInLavorazione from "./components/GareInLavorazione.jsx";
 import Scadenze, { VistaMese } from "./components/Scadenze.jsx";
@@ -24,6 +25,9 @@ const SEZIONI = [
 ];
 
 export default function App() {
+  // Finché non si è entrati non si carica nulla: nessuna chiamata al backend
+  // parte prima che la password sia stata accettata.
+  const [entrato, setEntrato] = useState(false);
   const [sezione, setSezione] = useState("home");
   const [salute, setSalute] = useState(null);
   const [errore, setErrore] = useState(null);
@@ -35,11 +39,22 @@ export default function App() {
   const [prefill, setPrefill] = useState(null);      // dati per il simulatore dalla gara
   const [apriNuova, setApriNuova] = useState(false);
 
+  // Se il backend rifiuta la password (scaduta, cambiata) si torna all'accesso.
   useEffect(() => {
+    const suAccessoNegato = () => { setEntrato(false); setErrore(null); };
+    window.addEventListener("gare360:accesso-negato", suAccessoNegato);
+    return () => window.removeEventListener("gare360:accesso-negato", suAccessoNegato);
+  }, []);
+
+  useEffect(() => {
+    if (!entrato) return;
     api.health().then(setSalute).catch((e) => setErrore(e.message));
     api.costanti().then(setCostanti).catch(() => {});
-  }, []);
-  useEffect(() => { api.gare({ concluse: false }).then((r) => setElencoGare(r.gare)).catch(() => {}); }, [versione]);
+  }, [entrato]);
+  useEffect(() => {
+    if (!entrato) return;
+    api.gare({ concluse: false }).then((r) => setElencoGare(r.gare)).catch(() => {});
+  }, [versione, entrato]);
 
   const ricarica = useCallback(() => setVersione((v) => v + 1), []);
   const apriGara = useCallback((id) => { setGaraId(id); setSezione("home"); window.scrollTo({ top: 0 }); }, []);
@@ -71,6 +86,8 @@ export default function App() {
     impostazioni: <Impostazioni salute={salute} modello={modello} setModello={setModello} costanti={costanti} />,
   }[sezione];
 
+  if (!entrato) return <Accesso onEntrato={() => setEntrato(true)} />;
+
   return (
     <div className="app">
       <header className="testata">
@@ -80,6 +97,7 @@ export default function App() {
         </div>
         <div className="stato">
           {errore ? <>Backend non raggiungibile</> : salute ? <>Backend attivo · assistente <b>{salute.chiave_api_configurata ? "pronto" : "senza chiave API"}</b></> : <>Connessione al backend…</>}
+          <button className="btn esci" onClick={() => { auth.cancella(); setEntrato(false); }}>Esci</button>
         </div>
       </header>
 

@@ -1,0 +1,23 @@
+# --- Segreti: non devono MAI finire nel repository ---
+.env
+.env.local
+.env.*.local
+
+# --- Dati reali (gare, documenti caricati, archivio): restano su Google Drive ---
+data/
+materiali/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- Node / frontend ---
+node_modules/
+dist/
+.vercel/
+
+# --- Sistema ---
+.DS_Store
+Thumbs.db

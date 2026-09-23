@@ -14,10 +14,12 @@ Avvio locale:  uvicorn main:app --reload
 from __future__ import annotations
 
 import os
+import secrets
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import archive
@@ -25,16 +27,79 @@ import chatbot
 import tracker as trk
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
-app = FastAPI(title="Gare360 API", version="1.0.0")
+# La documentazione automatica (/docs) elenca tutti i comandi dell'API: in
+# produzione resta spenta. Per riaccenderla in locale: MOSTRA_DOCS=1
+MOSTRA_DOCS = os.environ.get("MOSTRA_DOCS", "0") == "1"
 
-origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()]
+app = FastAPI(
+    title="Gare360 API",
+    version="1.1.0",
+    docs_url="/docs" if MOSTRA_DOCS else None,
+    redoc_url="/redoc" if MOSTRA_DOCS else None,
+    openapi_url="/openapi.json" if MOSTRA_DOCS else None,
+)
+
+# Quali siti possono parlare con questo backend. Prima era consentito QUALSIASI
+# indirizzo *.vercel.app: ora solo quelli elencati qui o in ALLOWED_ORIGINS.
+ORIGINI_DEFAULT = "http://localhost:5173,https://gare360-ynfu.vercel.app"
+origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", ORIGINI_DEFAULT).split(",") if o.strip()]
+
+# Le anteprime di Vercel hanno un indirizzo diverso a ogni pubblicazione: si
+# possono riammettere solo di proposito, con ANTEPRIME_VERCEL=1.
+regex_anteprime = r"https://.*\.vercel\.app" if os.environ.get("ANTEPRIME_VERCEL", "0") == "1" else None
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"https://.*\.vercel\.app" if os.environ.get("ALLOW_VERCEL_PREVIEWS", "1") == "1" else None,
+    allow_origin_regex=regex_anteprime,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Protezione con password condivisa
+# ---------------------------------------------------------------------------
+# Tutte le rotte /api sono protette da un'unica password, impostata su Render
+# nella variabile d'ambiente APP_PASSWORD. Il frontend la chiede all'ingresso e
+# poi la manda a ogni richiesta nell'intestazione X-App-Password.
+#
+# Se APP_PASSWORD non e' impostata il backend si BLOCCA invece di restare
+# aperto: meglio un'app ferma di un'app che chiunque puo' leggere e svuotare.
+
+INTESTAZIONE_PASSWORD = "X-App-Password"
+ROTTE_LIBERE = {"/api/health"}
+
+
+def password_configurata() -> str:
+    return os.environ.get("APP_PASSWORD", "").strip()
+
+
+@app.middleware("http")
+async def controlla_password(request: Request, call_next):
+    percorso = request.url.path
+
+    # Prima di ogni vera richiesta il browser ne manda una di controllo (OPTIONS)
+    # che non puo' portare intestazioni personalizzate: va lasciata passare,
+    # altrimenti il frontend non riesce nemmeno a presentarsi.
+    if request.method == "OPTIONS" or not percorso.startswith("/api") or percorso in ROTTE_LIBERE:
+        return await call_next(request)
+
+    attesa = password_configurata()
+    if not attesa:
+        return JSONResponse(
+            {"detail": "Il server non ha una password configurata (APP_PASSWORD). "
+                       "Impostala fra le variabili d'ambiente su Render."},
+            status_code=503,
+        )
+
+    ricevuta = request.headers.get(INTESTAZIONE_PASSWORD, "")
+    # compare_digest evita di rivelare la password un carattere alla volta
+    # misurando quanto tempo impiega il confronto.
+    if not secrets.compare_digest(ricevuta, attesa):
+        return JSONResponse({"detail": "Password non corretta."}, status_code=401)
+
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +199,8 @@ class ChatIn(BaseModel):
 @app.get("/api/health")
 def health():
     return {"ok": True, "chiave_api_configurata": chatbot.chiave_configurata(),
-            "modello_default": chatbot.MODELLO_DEFAULT}
+            "modello_default": chatbot.MODELLO_DEFAULT,
+            "password_configurata": bool(password_configurata())}
 
 
 # ---------------------------------------------------------------------------

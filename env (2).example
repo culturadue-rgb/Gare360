@@ -1,2 +1,0 @@
-# URL del backend su Render, senza slash finale. In sviluppo lascia vuoto (usa il proxy di Vite).
-VITE_API_URL=https://alloro-api.onrender.com
