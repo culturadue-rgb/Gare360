@@ -228,11 +228,20 @@ def cerca(query: str, campi: str = "files(id,name,mimeType,modifiedTime,size)") 
 
 
 def trova_cartella(nome: str, genitore: Optional[str] = None) -> Optional[str]:
-    q = f"mimeType = '{MIME_CARTELLA}' and name = '{_escape(nome)}'"
+    """
+    Cerca una cartella per nome, ignorando maiuscole e minuscole: chi la crea a
+    mano puo' scriverla "gare360" o "Gare360" e deve funzionare comunque.
+    Il confronto esatto lo facciamo qui, non nella query, perche' Drive su
+    "name =" distingue le maiuscole.
+    """
+    q = f"mimeType = '{MIME_CARTELLA}' and name contains '{_escape(nome)}'"
     if genitore:
         q += f" and '{genitore}' in parents"
-    trovate = cerca(q, campi="files(id,name)")
-    return trovate[0]["id"] if trovate else None
+    atteso = nome.strip().lower()
+    for f in cerca(q, campi="files(id,name)"):
+        if f.get("name", "").strip().lower() == atteso:
+            return f["id"]
+    return None
 
 
 def crea_cartella(nome: str, genitore: Optional[str] = None) -> str:
@@ -289,11 +298,15 @@ def url_cartella(cartella_id: str) -> str:
 # --------------------------------------------------------------------------- #
 
 def trova_foglio(nome: str, genitore: Optional[str] = None) -> Optional[str]:
-    q = f"mimeType = '{MIME_FOGLIO}' and name = '{_escape(nome)}'"
+    """Come trova_cartella: nome confrontato ignorando le maiuscole."""
+    q = f"mimeType = '{MIME_FOGLIO}' and name contains '{_escape(nome)}'"
     if genitore:
         q += f" and '{genitore}' in parents"
-    trovati = cerca(q, campi="files(id,name)")
-    return trovati[0]["id"] if trovati else None
+    atteso = nome.strip().lower()
+    for f in cerca(q, campi="files(id,name)"):
+        if f.get("name", "").strip().lower() == atteso:
+            return f["id"]
+    return None
 
 
 def crea_foglio(nome: str, genitore: Optional[str] = None, schede: Iterable[str] = ()) -> str:
