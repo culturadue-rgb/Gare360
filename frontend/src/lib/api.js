@@ -122,6 +122,15 @@ Object.assign(api, {
   estraiScheda: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/scheda/estrai", f); },
   controllaCriteri: (criteri) => call("/api/criteri/controlla", { method: "POST", body: json(criteri) }),
 
+  // --- Simulatore e storico ---
+  stimeStoriche: (p = {}) => call("/api/storico/stime" + qs(p)),
+  profiliConcorrenti: (p = {}) => call("/api/storico/concorrenti" + qs(p)),
+  simulaScenari: (corpo) => call("/api/simula/scenari", { method: "POST", body: json(corpo) }),
+  analizzaGara: (gid, corpo) => call(`/api/gare/${gid}/analisi`, { method: "POST", body: json(corpo) }),
+  elencoAnalisi: (gid) => call(`/api/gare/${gid}/analisi`),
+  leggiAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`),
+  eliminaAnalisi: (gid, id) => call(`/api/gare/${gid}/analisi/${id}`, { method: "DELETE" }),
+
   // --- Calendario ---
   calendario: (p = {}) => call("/api/calendario" + qs(p)),
   aggiungiVoceCalendario: (v) => call("/api/calendario", { method: "POST", body: json(v) }),

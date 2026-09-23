@@ -40,7 +40,6 @@ export default function App() {
   const [elencoGare, setElencoGare] = useState([]);
   const [versione, setVersione] = useState(0);       // incrementa per far ricaricare elenchi e scadenze
   const [modello, setModello] = useState("");
-  const [prefill, setPrefill] = useState(null);      // dati per il simulatore dalla gara
   const [apriNuova, setApriNuova] = useState(false);
 
   // Se il backend rifiuta la password (scaduta, cambiata) si torna all'accesso.
@@ -71,7 +70,8 @@ export default function App() {
   const apriGara = useCallback((id) => { setGaraId(id); setSezione("home"); window.scrollTo({ top: 0 }); }, []);
   const garaCorrente = elencoGare.find((g) => g.id === garaId);
 
-  const onSimula = (dati) => { setPrefill({ ...dati }); setSezione("home"); setTimeout(() => document.getElementById("simulatore")?.scrollIntoView({ behavior: "smooth" }), 50); };
+  // Il simulatore legge i parametri dalla scheda della gara aperta: basta aprirla.
+  const onSimula = () => { setSezione("home"); setTimeout(() => document.getElementById("simulatore")?.scrollIntoView({ behavior: "smooth" }), 50); };
 
   const assistente = (
     <AssistenteGara
@@ -173,7 +173,7 @@ export default function App() {
           {(
             <div className="riquadro compatto" id="simulatore">
               <h2>Simulatore<small>{garaCorrente ? `gara: ${garaCorrente.titolo}` : "nessuna gara aperta"}</small></h2>
-              <Simulatore prefill={prefill} garaTitolo={garaCorrente?.titolo} />
+              <Simulatore elencoGare={elencoGare} garaId={garaId} onSelezionaGara={setGaraId} />
             </div>
           )}
         </aside>

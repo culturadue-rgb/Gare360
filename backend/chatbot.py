@@ -189,3 +189,29 @@ REGOLE
   scrivi la contraddizione nel campo "note" del criterio interessato.
 - Nell'elenco metti una riga per ogni criterio e, se ci sono, una riga per ogni
   sub-criterio con il criterio padre ripetuto."""
+
+
+ISTRUZIONI_ANALISI = """Produci l'analisi strategica completa di questa gara, seguendo il
+metodo e la struttura del tuo prompt di sistema.
+
+Nel contesto trovi, sotto "Dati ricavati dall'archivio storico":
+- scheda        la scheda di rilevazione compilata
+- criteri       i criteri di punteggio e la formula economica
+- risultati_simulatore  gli scenari GIA' CALCOLATI dal codice
+- stime_storiche        resa tecnica, scarto dal vincitore, ribassi, concorrenti,
+                        ciascuno con su quante gare si basa e con che affidabilita'
+- gare_simili           i precedenti confrontabili, con id e link
+- profili_concorrenti   le gare in cui si conosce il punteggio di chi ha vinto
+
+REGOLE NON NEGOZIABILI
+1. NON ricalcolare i numeri: usa quelli di risultati_simulatore e stime_storiche.
+   Se un numero ti serve e non c'e', scrivi che manca e quale dato servirebbe.
+2. Se uno scenario ha "calcolabile": false, NON inventare il punteggio economico:
+   riporta il motivo e ragiona sul testo della formula.
+3. Quando l'affidabilita' di una stima e' "bassa" o "molto bassa", dillo ogni volta
+   che la usi. Una media su sei gare non e' una previsione.
+4. Cita le gare precedenti per id (es. G-CUL-016), cosi' si possono ritrovare.
+5. Chiudi SEMPRE con il livello di affidabilita' complessivo (Alto / Medio / Basso)
+   e il motivo in una riga.
+
+Scrivi in italiano, in markdown, senza preamboli."""

@@ -459,3 +459,58 @@ def estrai_scadenza_euristica(testo: str, nome_file: str = "") -> dict:
 
     return {"titolo": titolo, "ente": ente, "data_scadenza": data, "ora_scadenza": ora, "settore": settore,
             "base_asta": None, "note": "", "fonte": "euristica"}
+
+
+# ---------------------------------------------------------------------------
+# Analisi strategiche salvate
+# ---------------------------------------------------------------------------
+# Ogni analisi completa finisce nella cartella della gara, con data e ora nel
+# nome. Si possono rileggere e cancellare: sono documenti, non stati dell'app.
+
+def _dir_analisi(gid: str) -> Path:
+    d = _dir(gid) / "analisi"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def salva_analisi(gid: str, testo: str, contesto: dict | None = None) -> dict:
+    quando = datetime.now().replace(microsecond=0)
+    voce = {
+        "id": quando.strftime("%Y%m%d-%H%M%S"),
+        "quando": quando.isoformat(),
+        "testo": testo,
+        "contesto": contesto or {},
+    }
+    (_dir_analisi(gid) / f"{voce['id']}.json").write_text(
+        json.dumps(voce, ensure_ascii=False, indent=2), encoding="utf-8")
+    return voce
+
+
+def elenco_analisi(gid: str, con_testo: bool = False) -> list[dict]:
+    d = _dir(gid) / "analisi"
+    if not d.exists():
+        return []
+    fuori = []
+    for f in sorted(d.glob("*.json"), reverse=True):
+        try:
+            v = json.loads(f.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not con_testo:
+            v = {**v, "testo": v.get("testo", "")[:300], "troncata": len(v.get("testo", "")) > 300}
+        fuori.append(v)
+    return fuori
+
+
+def leggi_analisi(gid: str, id_analisi: str) -> dict:
+    f = _dir(gid) / "analisi" / f"{id_analisi}.json"
+    if not f.exists():
+        raise KeyError(id_analisi)
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def elimina_analisi(gid: str, id_analisi: str) -> None:
+    f = _dir(gid) / "analisi" / f"{id_analisi}.json"
+    if not f.exists():
+        raise KeyError(id_analisi)
+    f.unlink()

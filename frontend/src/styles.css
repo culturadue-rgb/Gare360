@@ -378,3 +378,15 @@ details > div { padding: .3rem .9rem .9rem; border-top: 1px solid var(--linea); 
 .voce-modifica input, .voce-modifica select {
   padding: .3rem .4rem; border: 1px solid var(--linea); border-radius: 6px; font: inherit;
 }
+
+/* --- Simulatore ----------------------------------------------------------- */
+.stime { background: var(--blu-tenue); border-radius: var(--raggio); padding: .6rem .8rem; margin: .7rem 0; }
+.stime h3 { margin: 0 0 .3rem; color: var(--blu); font-size: .95rem; }
+.stime h3 small { font-weight: 400; color: var(--grigio); margin-left: .4rem; }
+.stime p { margin: .25rem 0; }
+.gare-usate { list-style: none; padding: .3rem 0 0; margin: 0; font-size: .85rem; }
+.gare-usate li { padding: .12rem 0; }
+.gare-usate label { display: flex; gap: .4rem; align-items: baseline; cursor: pointer; }
+.affidabilita-bassa, .affidabilita-molto-bassa { color: var(--rosso); }
+.modale.largo { max-width: 52rem; max-height: 85vh; overflow-y: auto; }
+.modale.largo .md { white-space: pre-wrap; line-height: 1.55; }

@@ -28,6 +28,7 @@ import calendario as cal
 import chatbot
 import drive
 import scheda as mod_scheda
+import storico
 from simulator import ConfigGara, Concorrente, Criterio, simula
 
 # La documentazione automatica (/docs) elenca tutti i comandi dell'API: in
@@ -618,6 +619,131 @@ async def api_archivi_importa(file: UploadFile = File(...)):
     except arch.ErroreArchivio as e:
         raise HTTPException(400, str(e)) from e
     return {"ok": True, "gare_per_archivio": conteggi}
+
+
+# --- Storico e simulatore --------------------------------------------------
+
+@app.get("/api/storico/stime")
+def api_storico_stime(archivio: Optional[str] = None, escludi: str = ""):
+    """
+    Le stime ricavate dagli archivi: resa tecnica, scarto dal vincitore,
+    ribassi, numero di concorrenti. Ogni stima dice su quante gare si basa e
+    quali, così si possono escludere quelle che non c'entrano.
+    """
+    fuori = [x.strip() for x in escludi.split(",") if x.strip()]
+    return storico.stime(archivio, fuori)
+
+
+@app.get("/api/storico/concorrenti")
+def api_storico_concorrenti(archivio: Optional[str] = None, limite: int = 12):
+    """Profili ricavati dalle gare in cui si conosce il punteggio del vincitore."""
+    return {"profili": storico.profili_concorrenti(archivio, limite)}
+
+
+class ScenariIn(BaseModel):
+    config: ConfigIn
+    concorrenti: list[ConcorrenteIn] = []
+    ribassi: list[float] = [3.0, 5.0, 7.0]
+    delta_tecnici: list[float] = []
+    formula_testo: str = ""
+
+
+@app.post("/api/simula/scenari")
+def api_simula_scenari(body: ScenariIn):
+    """Più scenari affiancati. Tutto calcolato dal codice, niente AI."""
+    from simulator import confronto
+    c = body.config
+    cfg = ConfigGara(
+        nome=c.nome, base_asta=c.base_asta, punti_tecnico=c.punti_tecnico,
+        punti_economico=c.punti_economico,
+        criteri=[Criterio(x.nome, x.tipo, x.punti_max, x.resa_override)
+                 for x in c.criteri if x.nome.strip()],
+        formula_prezzo=c.formula_prezzo, coeff_bilineare=c.coeff_bilineare,
+        soglia_sbarramento=c.soglia_sbarramento, riparametrazione=c.riparametrazione,
+        formula_testo=body.formula_testo,
+    )
+    conc = [Concorrente(x.nome, x.livello_tecnico, x.ribasso) for x in body.concorrenti if x.nome.strip()]
+    return confronto(cfg, {}, conc, body.ribassi, body.delta_tecnici)
+
+
+# --- Analisi strategica (AI) ----------------------------------------------
+
+class AnalisiIn(BaseModel):
+    risultati: dict = {}          # quanto calcolato dal simulatore
+    archivio: Optional[str] = None
+    modello: Optional[str] = None
+
+
+@app.post("/api/gare/{gid}/analisi")
+def api_gara_analisi(gid: str, body: AnalisiIn):
+    """
+    L'analisi strategica. Il modello NON ricalcola: riceve i numeri già fatti
+    dal simulatore, la scheda, i documenti e le gare simili, e li commenta.
+    """
+    try:
+        g = gare.carica(gid)
+    except KeyError:
+        raise HTTPException(404, "Gara non trovata.")
+    if not chatbot.chiave_configurata():
+        raise HTTPException(503, "L'assistente non è configurato: manca ANTHROPIC_API_KEY.")
+
+    archivio_nome = body.archivio or _archivio_per_settore(g.get("settore", ""))
+    dati = {
+        "scheda": g.get("scheda", {}),
+        "criteri": g.get("criteri", {}),
+        "risultati_simulatore": body.risultati,
+        "stime_storiche": storico.stime(archivio_nome),
+        "gare_simili": storico.gare_simili(
+            archivio_nome,
+            testo=g.get("titolo", "") + " " + (g.get("scheda", {}).get("servizio") or ""),
+            regione=(g.get("scheda", {}) or {}).get("regione", "")),
+        "profili_concorrenti": storico.profili_concorrenti(archivio_nome),
+    }
+    system = chatbot.system_gara(gare.contesto_gara(g), archive.leggi_testo(), dati)
+    try:
+        testo = chatbot.chiama(system, [{"role": "user", "content": chatbot.ISTRUZIONI_ANALISI}],
+                               body.modello, max_tokens=8000)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"Analisi non riuscita: {e}") from e
+
+    voce = gare.salva_analisi(gid, testo, {"archivio": archivio_nome,
+                                           "scenari": len(body.risultati.get("scenari", []))})
+    gare.tocca(g)
+    return voce
+
+
+def _archivio_per_settore(settore: str) -> str:
+    """Il settore della gara dice in quale archivio cercare i precedenti."""
+    s = (settore or "").strip().lower()
+    if s.startswith("cultur"):
+        return "Cultura"
+    if s.startswith("serviz") or s.startswith("educ"):
+        return "Servizi_educativi"
+    if s.startswith("social"):
+        return "Sociale"
+    return "Cultura"
+
+
+@app.get("/api/gare/{gid}/analisi")
+def api_gara_analisi_elenco(gid: str):
+    return {"analisi": gare.elenco_analisi(gid)}
+
+
+@app.get("/api/gare/{gid}/analisi/{id_analisi}")
+def api_gara_analisi_una(gid: str, id_analisi: str):
+    try:
+        return gare.leggi_analisi(gid, id_analisi)
+    except KeyError:
+        raise HTTPException(404, "Analisi non trovata.")
+
+
+@app.delete("/api/gare/{gid}/analisi/{id_analisi}")
+def api_gara_analisi_elimina(gid: str, id_analisi: str):
+    try:
+        gare.elimina_analisi(gid, id_analisi)
+    except KeyError:
+        raise HTTPException(404, "Analisi non trovata.")
+    return {"ok": True}
 
 
 # --- Scheda di rilevazione -------------------------------------------------

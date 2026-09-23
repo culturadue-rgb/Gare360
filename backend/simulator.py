@@ -53,6 +53,7 @@ class ConfigGara:
     coeff_bilineare: float = 0.85       # X della formula bilineare (0.80 / 0.85 / 0.90)
     soglia_sbarramento: Optional[float] = None  # punti tecnici minimi, None = assente
     riparametrazione: bool = False      # riporta il miglior tecnico al max
+    formula_testo: str = ""             # la formula come scritta nel disciplinare
 
 
 @dataclass
@@ -104,9 +105,40 @@ def normalizza(s: str) -> str:
 # Punteggio economico
 # ---------------------------------------------------------------------------
 
+FORMULE_SUPPORTATE = {"lineare", "proporzionale", "bilineare"}
+
+
+class FormulaNonSupportata(Exception):
+    """
+    La formula del disciplinare non e' fra quelle che sappiamo calcolare.
+
+    Si solleva invece di approssimare: un punteggio economico sbagliato porta a
+    consigliare il ribasso sbagliato, che e' il danno peggiore che questo
+    strumento possa fare.
+    """
+
+    def __init__(self, formula: str, testo: str = ""):
+        self.formula = formula
+        self.testo = testo
+        super().__init__(
+            f"La formula «{formula}» non e' fra quelle calcolabili "
+            f"({', '.join(sorted(FORMULE_SUPPORTATE))}). Il punteggio economico non viene "
+            "calcolato: va letto il testo del disciplinare e deciso a mano."
+        )
+
+
 def punteggio_economico(ribasso: float, ribassi_tutti: list[float], cfg: ConfigGara) -> float:
     """Punti prezzo per un singolo ribasso, dato l'insieme dei ribassi in gara."""
     pmax = cfg.punti_economico
+
+    # Gara a sola offerta tecnica (capita: il Salzano vale 100 punti di tecnica
+    # e zero di prezzo). Non e' un errore, e' un caso da gestire.
+    if pmax <= 0:
+        return 0.0
+
+    if cfg.formula_prezzo not in FORMULE_SUPPORTATE:
+        raise FormulaNonSupportata(cfg.formula_prezzo, getattr(cfg, "formula_testo", ""))
+
     r_max = max(ribassi_tutti) if ribassi_tutti else 0.0
     if r_max <= 0:
         return 0.0
@@ -228,3 +260,87 @@ def _totale_con_ribasso(cfg, resa_storica, ribasso, concorrenti) -> dict:
     totali = {k: tecs[k] + punteggio_economico(ribassi_map[k], ribassi, cfg) for k in tecs}
     best_tot = max(totali.values())
     return {"noi_vince": totali["Noi"] >= best_tot - 1e-9}
+
+
+# ---------------------------------------------------------------------------
+# Scenari multipli
+# ---------------------------------------------------------------------------
+
+def scenario(cfg: ConfigGara, resa_storica: dict, ribasso: float,
+             concorrenti: list[Concorrente], delta_tecnico: float = 0.0,
+             etichetta: str = "") -> dict:
+    """
+    Un singolo scenario: il nostro ribasso, i concorrenti ipotizzati, e quanti
+    punti tecnici in più o in meno rispetto alla resa storica.
+
+    Restituisce sempre un dizionario: se la formula non è calcolabile lo dice
+    invece di sollevare, così gli altri scenari della stessa tabella non saltano.
+    """
+    try:
+        res = simula(cfg, resa_storica, ribasso, concorrenti)
+    except FormulaNonSupportata as e:
+        return {"etichetta": etichetta, "ribasso": ribasso, "calcolabile": False,
+                "motivo": str(e), "formula_testo": e.testo}
+
+    noi = res["noi"]
+    # Il delta tecnico si applica dopo il calcolo: è un "cosa succede se".
+    if delta_tecnico:
+        noi_tec = round(noi.tecnico + delta_tecnico, 3)
+        totale_noi = round(noi_tec + noi.economico, 3)
+        migliori = [o.totale for o in res["graduatoria"] if o.nome != "Noi" and not o.escluso]
+        vinciamo = not migliori or totale_noi >= max(migliori) - 1e-9
+    else:
+        noi_tec, totale_noi = noi.tecnico, noi.totale
+        vinciamo = res["vincitore"].nome == "Noi"
+
+    return {
+        "etichetta": etichetta or f"ribasso {ribasso:g}%",
+        "ribasso": ribasso,
+        "delta_tecnico": delta_tecnico,
+        "calcolabile": True,
+        "nostro_tecnico": noi_tec,
+        "nostro_economico": noi.economico,
+        "nostro_totale": totale_noi,
+        "vincitore": res["vincitore"].nome,
+        "distacco": res["distacco"],
+        "posizione": res["posizione"],
+        "vinciamo": vinciamo,
+        "graduatoria": [{"nome": o.nome, "tecnico": o.tecnico, "economico": o.economico,
+                         "totale": o.totale, "ribasso": o.ribasso, "escluso": o.escluso}
+                        for o in res["graduatoria"]],
+        "ribasso_minimo_vittoria": res["sensibilita"]["ribasso_minimo_vittoria"],
+        "punti_tecnici_mancanti": res["sensibilita"]["punti_tecnici_mancanti"],
+        "dettaglio_criteri": noi.dettaglio_criteri,
+    }
+
+
+RIBASSI_RAPIDI = [3.0, 5.0, 7.0]
+
+
+def confronto(cfg: ConfigGara, resa_storica: dict, concorrenti: list[Concorrente],
+              ribassi: list[float] | None = None,
+              delta_tecnici: list[float] | None = None) -> dict:
+    """
+    Più scenari affiancati: un ribasso per colonna, più le varianti sui punti
+    tecnici. Tutto deterministico: stessi ingressi, stessa tabella.
+    """
+    ribassi = ribassi if ribassi is not None else RIBASSI_RAPIDI
+    scenari = [scenario(cfg, resa_storica, r, concorrenti, etichetta=f"ribasso {r:g}%")
+               for r in ribassi]
+
+    for d in (delta_tecnici or []):
+        if not d:
+            continue
+        base = ribassi[0] if ribassi else 0.0
+        segno = "+" if d > 0 else ""
+        scenari.append(scenario(cfg, resa_storica, base, concorrenti, delta_tecnico=d,
+                                etichetta=f"ribasso {base:g}% con {segno}{d:g} punti tecnici"))
+
+    calcolabili = [s for s in scenari if s["calcolabile"]]
+    return {
+        "scenari": scenari,
+        "formula": cfg.formula_prezzo,
+        "formula_calcolabile": bool(calcolabili) or cfg.punti_economico <= 0,
+        "somma_criteri": sum(c.punti_max for c in cfg.criteri),
+        "vincenti": [s["etichetta"] for s in calcolabili if s["vinciamo"]],
+    }
