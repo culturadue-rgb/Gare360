@@ -4,6 +4,9 @@ import { classeSettore, fmtDataOra, giorniLabel } from "../lib/util.js";
 import Modale from "./Modale.jsx";
 import NuovaGara from "./NuovaGara.jsx";
 
+// Assistente su claude.ai: usa l'account Claude di chi lo apre, senza chiave API sul server.
+const ASSISTENTE_CLAUDE_URL = "https://claude.ai/artifact/Lt2Y4Zuu1NsRhLmmSsC6Wm";
+
 // Chat dell'assistente sulla gara selezionata. Senza gara: chat generica (endpoint /api/chat esistente).
 export default function AssistenteGara({ garaId, onSelezionaGara, elencoGare, costanti, salute, modello, onGaraAggiornata, onSimula, apriNuova, setApriNuova }) {
   const [g, setG] = useState(null);
@@ -103,7 +106,12 @@ export default function AssistenteGara({ garaId, onSelezionaGara, elencoGare, co
         </div>
       )}
 
-      {senzaChiave && <div className="avviso info">L'assistente AI è spento perché sul server manca <code>ANTHROPIC_API_KEY</code>. Puoi comunque creare gare, caricare documenti e usare simulatore, calendario e archivio.</div>}
+      {senzaChiave && (
+        <div className="avviso info">
+          L'assistente interno è spento (sul server manca <code>ANTHROPIC_API_KEY</code>). Usa l'Assistente Gare su Claude: carica i documenti, compila la scheda e incollala qui.{" "}
+          <a className="btn primario piccolo" href={ASSISTENTE_CLAUDE_URL} target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>Apri Assistente Gare</a>
+        </div>
+      )}
       {g && !g.memoria_attiva && (
         <div className="avviso">Memoria archiviata: sono passati più di {costanti?.memoria_giorni || 15} giorni dall'ultima attività, quindi conversazione e analisi precedenti non vengono più passate all'assistente. <button className="link" onClick={() => azione("Riattivo…", () => api.riattivaMemoria(g.id).then((x) => ({ gara: x })))}>Riattiva la memoria</button></div>
       )}
