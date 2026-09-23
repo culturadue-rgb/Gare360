@@ -410,7 +410,7 @@ def trova_foglio(nomi: list[str], archivio: str) -> Optional[str]:
         return candidati[0]
     if len(candidati) > 1:
         raise ErroreArchivio(
-            f"Nel file ci sono piu' fogli che sembrano l'archivio «{archivio}»: "
+            f"Nel file ci sono più fogli che sembrano l'archivio «{archivio}»: "
             f"{', '.join(candidati)}. Rinominane uno, o lascia solo quello giusto: "
             "scegliere da solo vorrebbe dire leggere forse l'archivio sbagliato."
         )
@@ -418,7 +418,7 @@ def trova_foglio(nomi: list[str], archivio: str) -> Optional[str]:
 
 
 def _errore_foglio_mancante(archivio: str, nomi: list[str]) -> ErroreArchivio:
-    """Detto in modo che si capisca cosa fare, non solo che e' andata male."""
+    """Detto in modo che si capisca cosa fare, non solo che è andata male."""
     riconosciuti = []
     for a in ARCHIVI:
         try:
@@ -428,9 +428,9 @@ def _errore_foglio_mancante(archivio: str, nomi: list[str]) -> ErroreArchivio:
         if trovato:
             riconosciuti.append(f"{trovato} -> {a}")
     coda = ("Fogli riconosciuti: " + "; ".join(riconosciuti) + ". "
-            if riconosciuti else "Nessun foglio di questo file e' stato riconosciuto. ")
+            if riconosciuti else "Nessun foglio di questo file è stato riconosciuto. ")
     return ErroreArchivio(
-        f"Nel file Excel non c'e' nessun foglio per l'archivio «{archivio}». "
+        f"Nel file Excel non c'è nessun foglio per l'archivio «{archivio}». "
         f"Fogli presenti: {', '.join(nomi)}. " + coda +
         "Controlla di aver caricato Archivio_Gare360_unificato.xlsx e non un altro file."
     )
@@ -454,18 +454,18 @@ def _riga_intestazioni(ws, foglio: str) -> int:
 
     # Non trovata: meglio dire cosa c'e' davvero nel foglio, perche' quasi
     # sempre vuol dire che il file caricato non e' l'archivio.
-    visto = "Il foglio e' vuoto. "
+    visto = "Il foglio è vuoto. "
     for r in range(1, min(ws.max_row, RIGHE_INTESTAZIONE) + 1):
         contenuto = [t for t in (_testo(ws.cell(r, c).value) for c in range(1, 7)) if t]
         if contenuto:
-            visto = f"La prima riga con qualcosa dentro e' la {r} e contiene: " + \
+            visto = f"La prima riga con qualcosa dentro è la {r} e contiene: " + \
                     ", ".join(contenuto) + ". "
             break
     raise ErroreArchivio(
         f"Nel foglio «{foglio}» non trovo la riga delle intestazioni: "
         f"ho cercato una casella «id_gara» nelle prime {RIGHE_INTESTAZIONE} righe "
-        f"e non c'e'. " + visto +
-        "Quasi sempre questo vuol dire che il file caricato non e' "
+        f"e non c'è. " + visto +
+        "Quasi sempre questo vuol dire che il file caricato non è "
         "Archivio_Gare360_unificato.xlsx ma un altro foglio di calcolo."
     )
 

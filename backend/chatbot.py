@@ -66,7 +66,7 @@ def stato_chiave() -> dict:
     k = _chiave()
     if not k:
         return {"presente": False, "forma": "assente",
-                "nota": "Non c'e' nessuna chiave: va impostata la variabile ANTHROPIC_API_KEY."}
+                "nota": "Non c'è nessuna chiave: va impostata la variabile ANTHROPIC_API_KEY."}
     # Ripulita: nella variabile c'erano spazi, a capo o virgolette di troppo.
     # Si toglie da soli, ma vale la pena dirlo: e' la causa piu' frequente di
     # una chiave rifiutata, ed e' invisibile guardando il pannello.
@@ -76,20 +76,20 @@ def stato_chiave() -> dict:
                   "sistemarla su Render." if ripulita else "")
     if not k.startswith("sk-ant-"):
         return {"presente": True, "forma": "sospetta", "ripulita": ripulita,
-                "nota": "La chiave non comincia con «sk-ant-»: probabilmente e' stata "
-                        "incollata male o e' un'altra cosa." + avvertenza}
+                "nota": "La chiave non comincia con «sk-ant-»: probabilmente è stata "
+                        "incollata male o è un'altra cosa." + avvertenza}
     if len(k) < 40:
         return {"presente": True, "forma": "sospetta", "ripulita": ripulita,
-                "nota": f"La chiave e' lunga solo {len(k)} caratteri: sembra troncata." + avvertenza}
+                "nota": f"La chiave è lunga solo {len(k)} caratteri: sembra troncata." + avvertenza}
     if _rifiutata:
         return {"presente": True, "forma": "rifiutata", "ripulita": ripulita,
                 "rifiutata": True,
-                "nota": _rifiutata + " Finche' non viene sostituita, le funzioni "
+                "nota": _rifiutata + " Finché non viene sostituita, le funzioni "
                         "automatiche non possono funzionare: usa i riquadri "
                         "«Oppure: ... a mano su claude.ai»." + avvertenza}
     return {"presente": True, "forma": "plausibile", "ripulita": ripulita,
             "nota": "La chiave ha la forma giusta. Se l'AI continua a rifiutarla, "
-                    "provala con il pulsante: solo Anthropic sa se e' ancora valida."
+                    "provala con il pulsante: solo Anthropic sa se è ancora valida."
                     + avvertenza}
 
 
@@ -119,29 +119,29 @@ def _in_italiano(e: Exception) -> str:
     testo = str(e)
     stato = getattr(e, "status_code", None)
     if stato == 401 or "authentication_error" in testo or "invalid x-api-key" in testo:
-        _segna_rifiuto("La chiave API configurata sul server e' stata rifiutata da Anthropic.")
-        return ("La chiave API non e' valida: Anthropic l'ha rifiutata. Va "
+        _segna_rifiuto("La chiave API configurata sul server è stata rifiutata da Anthropic.")
+        return ("La chiave API non è valida: Anthropic l'ha rifiutata. Va "
                 "ricontrollata su Render (variabile ANTHROPIC_API_KEY) e "
                 "confrontata con quella su console.anthropic.com. Attenzione agli "
                 "spazi e agli a capo incollati per sbaglio.")
     if stato == 403 or "permission_error" in testo:
         _segna_rifiuto("La chiave API non ha il permesso di usare il modello richiesto.")
-        return ("La chiave API e' valida ma non ha il permesso di usare questo "
+        return ("La chiave API è valida ma non ha il permesso di usare questo "
                 "modello. Controlla il piano su console.anthropic.com.")
     if stato == 429 or "rate_limit" in testo:
-        return ("Troppe richieste in poco tempo, oppure il credito e' esaurito. "
+        return ("Troppe richieste in poco tempo, oppure il credito è esaurito. "
                 "Aspetta un minuto e riprova; se insiste, controlla il credito su "
                 "console.anthropic.com.")
     if stato in (500, 502, 503, 529) or "overloaded" in testo:
-        return "Il servizio AI e' momentaneamente sovraccarico. Riprova fra un minuto."
+        return "Il servizio AI è momentaneamente sovraccarico. Riprova fra un minuto."
     if stato == 404 or "not_found" in testo:
-        return (f"Il modello richiesto non esiste o non e' disponibile per questa "
+        return (f"Il modello richiesto non esiste o non è disponibile per questa "
                 f"chiave. Modello in uso: {MODELLO_DEFAULT}.")
     return f"L'AI non ha risposto: {testo}"
 
 
 class ErroreAI(RuntimeError):
-    """Errore gia' tradotto in italiano, pronto da mostrare."""
+    """Errore già tradotto in italiano, pronto da mostrare."""
 
 
 def prova_chiave() -> dict:

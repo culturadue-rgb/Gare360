@@ -29,10 +29,17 @@ export default function PonteManuale({ titolo, descrizione, carica, salva,
     setOccupato(true); setErrore(""); setCopiato(false);
     try {
       const r = await carica();
-      setTesto(r.testo || "");
+      // Se non c'è niente da copiare non si aprono i passi 2 e 3: mostrerebbero
+      // una casella vuota da incollare e un pulsante che non porta da nessuna
+      // parte. Si dice solo cosa manca.
+      if (!r.testo) {
+        setErrore(r.avviso || "Non c'è niente da preparare.");
+        setAperto(false);
+        return;
+      }
+      setTesto(r.testo);
       setAvviso(r.avviso || "");
       setAperto(true);
-      if (!r.testo) setErrore(r.avviso || "Non c'è niente da preparare.");
     } catch (e) {
       setErrore(e.message);
     } finally {

@@ -38,7 +38,7 @@ def avviso_lunghezza(testo: str) -> str:
     n = len(testo)
     if n <= LIMITE_COMODO:
         return ""
-    return (f"Il testo e' lungo {n:,} caratteri".replace(",", ".") +
+    return (f"Il testo è lungo {n:,} caratteri".replace(",", ".") +
             ": potrebbe non entrare tutto in un solo messaggio. Se Claude si lamenta, "
             "incolla prima la parte iniziale e poi il resto in un secondo messaggio.")
 
@@ -73,7 +73,7 @@ def istruzioni_scheda() -> str:
 
 
 def testo_per_scheda(testo_documento: str, nome_file: str = "") -> str:
-    """Il messaggio completo da incollare: istruzioni piu' documento."""
+    """Il messaggio completo da incollare: istruzioni più documento."""
     intestazione = f"(documento: {nome_file})\n\n" if nome_file else ""
     return (istruzioni_scheda() + "\n" + "=" * 60 + "\nDOCUMENTI DI GARA\n" + "=" * 60 +
             "\n\n" + intestazione + testo_documento)

@@ -339,7 +339,7 @@ def api_archivio_elimina(nome: str, id_gara: str):
 
 @app.get("/api/archivi-esporta")
 def api_archivi_esporta():
-    """Scarica tutti e tre gli archivi in un Excel: e' la copia di sicurezza."""
+    """Scarica tutti e tre gli archivi in un Excel: è la copia di sicurezza."""
     from fastapi.responses import Response
     dati = _proteggi(arch.esporta_excel)
     return Response(
@@ -702,7 +702,7 @@ def api_ccnl_chiedi(body: DomandaCCNL):
                 "problemi": [], "nessun_passaggio": True}
 
     if not chatbot.chiave_configurata():
-        raise HTTPException(503, "L'assistente non e' configurato: manca ANTHROPIC_API_KEY.")
+        raise HTTPException(503, "L'assistente non è configurato: manca ANTHROPIC_API_KEY.")
 
     system = mod_ccnl.istruzioni(passaggi)
     try:
@@ -948,14 +948,14 @@ def api_analisi_incolla(gid: str, body: TestoIncollato):
 
 @app.post("/api/scheda/testo")
 async def api_scheda_testo(file: UploadFile = File(...)):
-    """Istruzioni piu' testo del documento, pronti da incollare."""
+    """Istruzioni più testo del documento, pronti da incollare."""
     dati = await file.read()
     if not dati:
         raise HTTPException(400, "File vuoto.")
     testo_doc = gare.estrai_testo(file.filename or "documento", dati)
     if not testo_doc.strip():
         raise HTTPException(
-            400, "Dal file non si ricava testo: se e' una scansione va prima riconosciuta, "
+            400, "Dal file non si ricava testo: se è una scansione va prima riconosciuta, "
                  "oppure compila la scheda a mano.")
     testo = manuale.testo_per_scheda(testo_doc[:120_000], file.filename or "")
     return {"testo": testo, "caratteri": len(testo), "nome_file": file.filename,
@@ -974,6 +974,26 @@ def api_scheda_incolla(body: TestoIncollato):
     return manuale.leggi_scheda_incollata(body.testo)
 
 
+def _niente_da_chiedere(contratto: Optional[str]) -> str:
+    """
+    Perché non c'è niente da cercare: manca il documento, o manca l'argomento.
+
+    Sono due situazioni diverse e richiedono due cose diverse — caricare un PDF,
+    oppure riformulare la domanda. Dirle allo stesso modo manda a cercare un
+    problema dove non c'è.
+    """
+    documenti = mod_ccnl.elenco(contratto)
+    if not documenti:
+        dove = f" per il CCNL «{contratto}»" if contratto else ""
+        return ("Non hai ancora caricato nessun documento" + dove + ". La consultazione "
+                "risponde soltanto con i passaggi dei PDF caricati qui: finché non ce n'è "
+                "nemmeno uno non c'è niente su cui cercare. Carica il PDF del contratto "
+                "e riprova.")
+    return (f"Nei {len(documenti)} documenti caricati non c'è nessun passaggio che "
+            "corrisponda alla domanda. Prova con parole diverse — il numero dell'articolo, "
+            "o il termine esatto usato dal contratto — oppure quel testo non è in questi PDF.")
+
+
 @app.post("/api/ccnl/testo")
 def api_ccnl_testo(body: DomandaCCNL):
     """
@@ -988,8 +1008,7 @@ def api_ccnl_testo(body: DomandaCCNL):
     passaggi = mod_ccnl.cerca_passaggi(body.domanda, body.contratto)
     if not passaggi:
         return {"testo": "", "passaggi": [], "nessun_passaggio": True,
-                "avviso": "Nei documenti caricati non c'e' nessun passaggio pertinente: "
-                          "non c'e' niente da chiedere."}
+                "avviso": _niente_da_chiedere(body.contratto)}
     testo = manuale.testo_per_ccnl(mod_ccnl.istruzioni(passaggi), body.domanda)
     return {"testo": testo, "caratteri": len(testo), "passaggi": passaggi,
             "nessun_passaggio": False, "avviso": manuale.avviso_lunghezza(testo)}
