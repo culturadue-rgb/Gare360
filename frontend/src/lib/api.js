@@ -2,6 +2,9 @@
 // VITE_API_URL: URL del backend (Render). Vuoto in sviluppo => proxy di Vite su /api.
 const BASE = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
 
+// Serve ai link di scaricamento diretto, che non passano da fetch.
+export const BASE_API = BASE;
+
 // --- Password condivisa ----------------------------------------------------
 // Resta nella scheda del browser (sessionStorage): chiudendo la scheda va via,
 // e non viene mai scritta su disco. Viaggia a ogni richiesta nell'intestazione
@@ -74,6 +77,7 @@ export const api = {
   archivioAggiungi: (nome, riga) => call(`/api/archivi/${encodeURIComponent(nome)}`, { method: "POST", body: json(riga) }),
   archivioAggiorna: (nome, id, campi) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "PATCH", body: json(campi) }),
   archivioElimina: (nome, id) => call(`/api/archivi/${encodeURIComponent(nome)}/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  importaArchivi: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/archivi-importa", f); },
 
   prompt: () => call("/api/prompt"),
   salvaPrompt: (testo) => call("/api/prompt", { method: "PUT", body: json({ testo }) }),
