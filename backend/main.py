@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import os
 import secrets
+from datetime import datetime
 from typing import Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 import archive
@@ -29,6 +30,7 @@ import ccnl as mod_ccnl
 import chatbot
 import drive
 import manuale
+import salvataggio
 import scheda as mod_scheda
 import storico
 from simulator import ConfigGara, Concorrente, Criterio, simula
@@ -216,6 +218,70 @@ def api_prova_chiave():
 
 
 # ---------------------------------------------------------------------------
+# Salvataggio e ripristino
+#
+# Sul piano gratuito di Render il server non ha un disco: si spegne dopo un
+# quarto d'ora e riparte pulito. Finché è così, la memoria dell'app deve stare
+# altrove, e queste rotte servono a portarla fuori e a rimetterla dentro.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/salvataggio/stato")
+def api_salvataggio_stato():
+    return salvataggio.stato()
+
+
+@app.get("/api/salvataggio/completo")
+def api_salvataggio_completo():
+    """Tutto, PDF compresi: la copia da scaricare e tenere da parte."""
+    dati = salvataggio.esporta_zip()
+    nome = f"Gare360_salvataggio_{datetime.now().strftime('%Y-%m-%d_%H%M')}.zip"
+    return Response(content=dati, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@app.post("/api/salvataggio/completo")
+async def api_salvataggio_ripristina(file: UploadFile = File(...)):
+    dati = await file.read()
+    if not dati:
+        raise HTTPException(400, "File vuoto.")
+    try:
+        return salvataggio.importa_zip(dati)
+    except salvataggio.ErroreSalvataggio as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.get("/api/salvataggio/leggero")
+def api_salvataggio_leggero():
+    """
+    Dati e testo estratto, senza gli originali: sta nel browser.
+
+    È quello che il frontend salva da solo dopo ogni modifica e rimette quando
+    trova il server vuoto.
+    """
+    return salvataggio.esporta_leggero()
+
+
+@app.post("/api/salvataggio/leggero")
+def api_salvataggio_leggero_ripristina(dati: dict = Body(...),
+                                       solo_se_vuoto: bool = True):
+    """
+    Rimette la copia del browser.
+
+    Di default SOLO su un server vuoto: il ripristino automatico non deve poter
+    sovrascrivere il lavoro di oggi con la copia di ieri. Per forzare, si passa
+    solo_se_vuoto=false — ed è una scelta esplicita dell'utente.
+    """
+    if solo_se_vuoto and not salvataggio.vuoto():
+        return {"ripristinato": False,
+                "motivo": "Il server ha già dei dati: non è stato toccato niente."}
+    try:
+        esito = salvataggio.importa_leggero(dati)
+    except salvataggio.ErroreSalvataggio as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ripristinato": True, **esito}
+
+
+# ---------------------------------------------------------------------------
 # Simulatore
 # ---------------------------------------------------------------------------
 
@@ -280,9 +346,6 @@ def api_archivio_aggiungi(s: SchedaIn):
 # ---------------------------------------------------------------------------
 # Tre archivi con le stesse 34 colonne. Ogni riga e' modificabile e
 # cancellabile; la conferma prima di cancellare la chiede il frontend.
-
-from fastapi import Body  # noqa: E402
-
 
 def _archivio_valido(nome: str) -> str:
     if nome not in arch.ARCHIVI:
@@ -380,7 +443,7 @@ def api_chat(body: ChatIn):
 # GARE IN LAVORAZIONE, DOCUMENTI, SCADENZE  (endpoint aggiuntivi)
 # ===========================================================================
 
-from fastapi import File, Form, UploadFile  # noqa: E402
+from fastapi import Form  # noqa: E402
 
 import gare  # noqa: E402
 

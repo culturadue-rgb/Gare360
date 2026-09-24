@@ -36,9 +36,22 @@ L'ultimo passo è quello che conta: **il simulatore è preciso quanto è pieno l
 | Calendario | `DATA_DIR/calendario.json` |
 | Documenti CCNL e testo estratto | `DATA_DIR/ccnl/` |
 
-> ⚠️ **Sul piano gratuito di Render il disco si svuota a ogni riavvio.**
-> Finché i dati non stanno su Google Drive, l'unica copia che sopravvive con certezza è
-> quella che scarichi da **Impostazioni → Esporta gli archivi in Excel**. Scaricala spesso.
+> ⚠️ **Il server gratuito di Render non ha un disco.** Si spegne dopo un quarto d'ora di
+> inattività e riparte pulito: tutto quello che è stato caricato sparisce.
+>
+> Per questo l'app tiene due copie.
+>
+> **1. Automatica, nel browser.** Dopo ogni modifica — e comunque ogni due minuti — l'app
+> salva nel browser archivio, gare, schede, analisi, calendario, indice dei CCNL e il testo
+> già estratto dai PDF. Quando trova il server vuoto la rimette da sola, e lo dice. Non
+> contiene i PDF originali (troppo grandi) e vale solo su quel browser, su quel computer.
+>
+> **2. Completa, scaricabile.** *Impostazioni → Salva tutto*: uno zip con tutto, PDF
+> compresi, che non dipende da niente. È quella da tenere da parte, e si rimette con
+> *Ripristina da un file*.
+>
+> Il ripristino automatico avviene **solo su un server vuoto**, mai sopra a dati esistenti:
+> sovrascrivere il lavoro di oggi con la copia di ieri sarebbe peggio del problema.
 
 ### Passare a Google Drive
 

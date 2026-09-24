@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, BASE_API } from "../lib/api.js";
+import * as memoria from "../lib/memoria.js";
 
 export default function Impostazioni({ salute, modello, setModello, costanti }) {
   const [prompt, setPrompt] = useState("");
   const [msg, setMsg] = useState(null);
   const [errore, setErrore] = useState(null);
   const [statoArchivi, setStatoArchivi] = useState(null);
+  const [copiaBrowser, setCopiaBrowser] = useState(() => memoria.leggi());
+  const [ripristinando, setRipristinando] = useState(false);
+  const [esitoRipristino, setEsitoRipristino] = useState(null);
   const [provando, setProvando] = useState(false);
   const [esitoChiave, setEsitoChiave] = useState(null);
   const [caricando, setCaricando] = useState(false);
   const fileRef = useRef(null);
+  const ripristinoRef = useRef(null);
 
   const leggiStato = useCallback(() => {
     api.archivi().then((r) => setStatoArchivi(r.stato)).catch(() => {});
@@ -45,6 +50,19 @@ export default function Impostazioni({ salute, modello, setModello, costanti }) 
   const totale = gare
     ? Object.values(gare).reduce((s, n) => s + (typeof n === "number" ? n : 0), 0)
     : 0;
+
+  async function ripristinaDaFile(file) {
+    if (!file) return;
+    setRipristinando(true); setEsitoRipristino(null);
+    try {
+      const r = await api.ripristinaCompleto(file);
+      setEsitoRipristino({ ok: true, messaggio: `Ripristinati ${r.file_ripristinati} file. Ricarica la pagina per vederli.` });
+    } catch (e) {
+      setEsitoRipristino({ ok: false, messaggio: e.message });
+    } finally {
+      setRipristinando(false);
+    }
+  }
 
   async function provaChiave() {
     setProvando(true);
@@ -114,12 +132,45 @@ export default function Impostazioni({ salute, modello, setModello, costanti }) 
         </a>
       </div>
 
+
+      {/* ---------------- Salvataggio ----------------
+          Il piano gratuito di Render non dà un disco al server: si spegne dopo
+          un quarto d'ora e riparte pulito. Finché è così, la memoria dell'app
+          deve stare altrove, e va detto senza girarci intorno. */}
+      <h3>Salvataggio dei dati</h3>
       <p className="nota">
-        <b>Scarica spesso la copia di sicurezza.</b> Finché i dati non stanno su
-        Google Drive, l'archivio vive sul disco del server: sul piano gratuito di
-        Render quel disco si svuota a ogni riavvio, e il file esportato è l'unica
-        copia che sopravvive con certezza.
+        Il server gratuito <b>non ha un disco</b>: si spegne dopo un quarto d'ora di
+        inattività e riparte vuoto. Per questo l'app tiene due copie.
       </p>
+
+      <p className="nota">
+        <b>1. Copia automatica nel browser.</b>{" "}
+        {copiaBrowser
+          ? <>Aggiornata il <b>{(copiaBrowser.quando || "").replace("T", " alle ").slice(0, 19)}</b>{" "}
+              ({Object.keys(copiaBrowser.file || {}).length} file). Quando il server riparte
+              vuoto, viene rimessa da sola.</>
+          : <>Non ce n'è ancora una: comparirà dopo la prima modifica.</>}
+        {" "}Vale solo su questo computer e questo browser, e sparisce se cancelli i dati di
+        navigazione. Non contiene i PDF originali.
+      </p>
+
+      <p className="nota">
+        <b>2. Copia completa scaricabile.</b> Contiene <i>tutto</i>, PDF compresi, e non
+        dipende da niente. È quella da tenere da parte.
+      </p>
+      <div className="azioni">
+        <a className="btn primario" href={`${BASE_API}/api/salvataggio/completo`} download>
+          Salva tutto (scarica il file)
+        </a>
+        <input ref={ripristinoRef} type="file" accept=".zip" style={{ display: "none" }}
+               onChange={(e) => { ripristinaDaFile(e.target.files?.[0]); e.target.value = ""; }} />
+        <button className="btn" disabled={ripristinando} onClick={() => ripristinoRef.current?.click()}>
+          {ripristinando ? "Ripristino…" : "Ripristina da un file"}
+        </button>
+      </div>
+      {esitoRipristino && (
+        <p className={esitoRipristino.ok ? "avviso" : "avviso errore"}>{esitoRipristino.messaggio}</p>
+      )}
 
       {/* ---------------- Google Drive ---------------- */}
       <h3>Google Drive</h3>

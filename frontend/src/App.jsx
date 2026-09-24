@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, auth } from "./lib/api.js";
+import * as memoria from "./lib/memoria.js";
 import Accesso from "./components/Accesso.jsx";
 import SchedaGara from "./components/SchedaGara.jsx";
 import CCNL from "./components/CCNL.jsx";
@@ -42,6 +43,7 @@ export default function App() {
   const [versione, setVersione] = useState(0);       // incrementa per far ricaricare elenchi e scadenze
   const [modello, setModello] = useState("");
   const [apriNuova, setApriNuova] = useState(false);
+  const [ripristino, setRipristino] = useState(null);   // esito del recupero automatico
 
   // Se il backend rifiuta la password (scaduta, cambiata) si torna all'accesso.
   useEffect(() => {
@@ -57,6 +59,49 @@ export default function App() {
       .then((s) => { setSalute(s); if (!s.password_configurata) setEntrato(true); })
       .catch((e) => setErrore(e.message));
   }, []);
+
+  // Il server gratuito riparte vuoto a ogni riavvio. Se lo si trova senza dati
+  // e nel browser c'è la copia, la si rimette da soli: è la differenza fra
+  // ritrovare il proprio lavoro e ricominciare da capo ogni volta.
+  //
+  // Solo su un server vuoto, mai sopra a dati esistenti — lo ricontrolla anche
+  // il backend — perché sovrascrivere il lavoro di oggi con la copia di ieri
+  // sarebbe peggio del problema da risolvere.
+  useEffect(() => {
+    if (!entrato) return;
+    let annullato = false;
+    (async () => {
+      try {
+        const st = await api.statoSalvataggio();
+        if (annullato || !st.vuoto) return;
+        const copia = memoria.leggi();
+        if (!copia) return;
+        const esito = await api.ripristinaLeggero(copia, true);
+        if (annullato || !esito.ripristinato) return;
+        setRipristino({ file: esito.file_ripristinati, quando: copia.quando });
+        setVersione((v) => v + 1);
+      } catch {
+        // Restare senza rete di sicurezza non è un motivo per bloccare l'app.
+      }
+    })();
+    return () => { annullato = true; };
+  }, [entrato]);
+
+  // Dopo ogni modifica si aggiorna la copia nel browser. Con un attimo di
+  // attesa: salvare a ogni tasto premuto scaricherebbe lo stato del server
+  // decine di volte per una frase digitata.
+  //
+  // E poi ogni due minuti comunque: non tutte le schermate segnalano di aver
+  // cambiato qualcosa — il caricamento dell'archivio, per esempio, non passa
+  // di qui — e una copia che si aggiorna solo quando qualcuno si ricorda di
+  // avvisare è una copia che prima o poi resta indietro.
+  useEffect(() => {
+    if (!entrato) return;
+    const salva = () => api.salvataggioLeggero().then(memoria.scrivi).catch(() => {});
+    const attesa = setTimeout(salva, 3000);
+    const periodico = setInterval(salva, 120000);
+    return () => { clearTimeout(attesa); clearInterval(periodico); };
+  }, [versione, entrato]);
 
   useEffect(() => {
     if (!entrato) return;
@@ -145,6 +190,19 @@ export default function App() {
       </header>
 
       {errore && <div className="avviso errore">Il backend non risponde ({errore}). Controlla che sia avviato e che <code>VITE_API_URL</code> punti all'indirizzo giusto.</div>}
+
+      {/* Il recupero è automatico, ma non silenzioso: sapere che i dati sono
+          tornati da una copia — e di quando è — cambia quanto ci si può fidare
+          di quello che si sta guardando. */}
+      {ripristino && (
+        <div className="avviso info">
+          Il server era ripartito vuoto e ho rimesso i tuoi dati dalla copia del browser
+          ({ripristino.file} file, salvata il{" "}
+          <b>{(ripristino.quando || "").replace("T", " alle ").slice(0, 19)}</b>).
+          {" "}I PDF originali non sono nella copia e vanno ricaricati; tutto il resto c'è.
+          {" "}<button className="link" onClick={() => setRipristino(null)}>Ho capito</button>
+        </div>
+      )}
 
       <div className="dashboard">
         <nav className="nav" aria-label="Sezioni">

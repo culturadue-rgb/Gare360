@@ -77,6 +77,13 @@ const json = (body) => JSON.stringify(body);
 export const api = {
   health: () => call("/api/health"),
   provaChiave: () => call("/api/chiave/prova", { method: "POST" }),
+
+  // --- Salvataggio: il server gratuito riparte vuoto, la copia sta altrove ---
+  statoSalvataggio: () => call("/api/salvataggio/stato"),
+  salvataggioLeggero: () => call("/api/salvataggio/leggero"),
+  ripristinaLeggero: (dati, soloSeVuoto = true) =>
+    call(`/api/salvataggio/leggero?solo_se_vuoto=${soloSeVuoto}`, { method: "POST", body: json(dati) }),
+  ripristinaCompleto: (file) => { const f = new FormData(); f.append("file", file); return upload("/api/salvataggio/completo", f); },
   simula: (payload) => call("/api/simula", { method: "POST", body: json(payload) }),
 
   archivio: () => call("/api/archivio"),
